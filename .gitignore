@@ -1,0 +1,22 @@
+# Python 바이트 코드
+__pycache__/
+*.py[cod]
+*$py.class
+
+# 가상환경
+venv/
+env/
+ENV/
+
+# 로그 파일
+*.log
+
+# 로컬 설정 파일
+.env
+.env.local
+
+# IDE 관련 파일
+.idea/
+.vscode/
+*.swp
+*.swo 

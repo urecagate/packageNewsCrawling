@@ -65,16 +65,16 @@ RUN pip install --upgrade pip && \
     pip install -r requirements.txt
 
 # 환경 변수 설정 (GitHub Actions에서 전달받음)
-ENV EMAIL_PASSWORD=""
-ENV EMAIL_RECIPIENT="dwcbj6214@gmail.com"
+# ENV EMAIL_PASSWORD=""
+# ENV EMAIL_RECIPIENT="dwcbj6214@gmail.com"
 
 # 크롬 드라이버 설치를 위한 스크립트
-RUN CHROME_VERSION=$(google-chrome --version | awk '{print $3}' | cut -d. -f1) && \
-    CHROMEDRIVER_VERSION=$(curl -s "https://chromedriver.storage.googleapis.com/LATEST_RELEASE_$CHROME_VERSION") && \
-    wget "https://chromedriver.storage.googleapis.com/${CHROMEDRIVER_VERSION}/chromedriver_linux64.zip" && \
-    unzip chromedriver_linux64.zip && \
-    chmod +x chromedriver && \
-    mv chromedriver /usr/local/bin/
+# RUN CHROME_VERSION=$(google-chrome --version | awk '{print $3}' | cut -d. -f1) && \
+#     CHROMEDRIVER_VERSION=$(curl -s "https://chromedriver.storage.googleapis.com/LATEST_RELEASE_$CHROME_VERSION") && \
+#     wget "https://chromedriver.storage.googleapis.com/${CHROMEDRIVER_VERSION}/chromedriver_linux64.zip" && \
+#     unzip chromedriver_linux64.zip && \
+#     chmod +x chromedriver && \
+#     mv chromedriver /usr/local/bin/
 
 # utils.py 파일에서 headless 모드를 사용하도록 설정 필요
 # 주의: 이 설정은 utils.py 파일에 따라 다를 수 있음

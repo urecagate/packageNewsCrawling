@@ -67,8 +67,14 @@ def kill_chrome():
 # remote debugging 모드로 Chrome 실행 (최종 배포용)
 # 디버깅 시에는 incognito 모드로 실행하여 기존 크롬을 종료하지 않고 디버깅합니다.
 def start_chrome_debug():
+    # 환경 변수로 CI 환경 여부 확인 (GitHub Actions)
+    is_ci = os.environ.get('CI', 'false').lower() == 'true'
+    
     if DEBUG_MODE:
         print("DEBUG_MODE: Incognito 모드로 실행하므로 remote debugging 모드 생략합니다.")
+        return None
+    elif is_ci:
+        print("CI 환경에서 실행 중: 별도의 Chrome 프로세스를 시작하지 않습니다.")
         return None
     else:
         if platform.system() == "Windows":
@@ -94,59 +100,47 @@ def start_chrome_debug():
 # --------------------------------------------------------------------
 # Selenium 드라이버 생성 함수
 def create_driver_debug():
+    # 환경 변수로 CI 환경 여부 확인 (GitHub Actions)
+    is_ci = os.environ.get('CI', 'false').lower() == 'true'
+    
+    chrome_options = Options()
+    
     if DEBUG_MODE:
-        chrome_options = Options()
         chrome_options.add_argument("--incognito")
-        chrome_options.add_argument("--disable-blink-features=AutomationControlled")
-        chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36")
-        chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--disable-setuid-sandbox")
-        chrome_options.add_argument("--disable-dev-shm-usage")
-        chrome_options.add_argument("--disable-gpu")
-        chrome_options.add_argument("--disable-software-rasterizer")
-        chrome_options.add_argument("--disable-extensions")
-        chrome_options.add_argument("--start-maximized")
-        driver = webdriver.Chrome(options=chrome_options)
-        try:
-            from selenium_stealth import stealth
-            stealth(driver,
-                    languages=["ko-KR", "en-US", "en"],
-                    vendor="Google Inc.",
-                    platform="Win32",
-                    webgl_vendor="Intel Inc.",
-                    renderer="Intel Iris OpenGL Engine",
-                    fix_hairline=True)
-        except Exception as e:
-            print("selenium_stealth 적용 중 오류:", e)
-        print("Selenium 드라이버 (incognito mode) 생성 완료.")
-        return driver
-    else:
-        chrome_options = Options()
+    elif not is_ci:
         chrome_options.add_experimental_option("debuggerAddress", "127.0.0.1:9222")
-        chrome_options.add_argument("--disable-blink-features=AutomationControlled")
-        chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36")
-        chrome_options.add_argument("--no-sandbox")
+    
+    # 공통 옵션 설정
+    chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+    chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-setuid-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--disable-gpu")
+    chrome_options.add_argument("--disable-software-rasterizer")
+    chrome_options.add_argument("--disable-extensions")
+    chrome_options.add_argument("--start-maximized")
+    
+    # CI 환경에서는 항상 headless 모드 사용
+    if is_ci:
         chrome_options.add_argument("--headless")
-        chrome_options.add_argument("--disable-setuid-sandbox")
-        chrome_options.add_argument("--disable-dev-shm-usage")
-        chrome_options.add_argument("--disable-gpu")
-        chrome_options.add_argument("--disable-software-rasterizer")
-        chrome_options.add_argument("--disable-extensions")
-        chrome_options.add_argument("--start-maximized")
-        driver = webdriver.Chrome(options=chrome_options)
-        try:
-            from selenium_stealth import stealth
-            stealth(driver,
-                    languages=["ko-KR", "en-US", "en"],
-                    vendor="Google Inc.",
-                    platform="Win32",
-                    webgl_vendor="Intel Inc.",
-                    renderer="Intel Iris OpenGL Engine",
-                    fix_hairline=True)
-        except Exception as e:
-            print("selenium_stealth 적용 중 오류:", e)
-        print("Selenium 드라이버 생성 완료.")
-        return driver
+    
+    driver = webdriver.Chrome(options=chrome_options)
+    
+    try:
+        from selenium_stealth import stealth
+        stealth(driver,
+                languages=["ko-KR", "en-US", "en"],
+                vendor="Google Inc.",
+                platform="Win32",
+                webgl_vendor="Intel Inc.",
+                renderer="Intel Iris OpenGL Engine",
+                fix_hairline=True)
+    except Exception as e:
+        print("selenium_stealth 적용 중 오류:", e)
+    
+    print("Selenium 드라이버 생성 완료.")
+    return driver
 
 # --------------------------------------------------------------------
 # 여러 후보 CSS 선택자를 반환하는 함수
@@ -242,6 +236,105 @@ def translate_text(text, mode="default"):
     except Exception as e:
         print("번역 중 오류 발생:", e)
         return text
+
+def evaluate_article(keyword, article_summary):
+    """
+    키워드와 기사 요약을 평가하여 점수(float)와 해설(str)을 분리하여 반환하는 함수
+    
+    Args:
+        keyword (str): 검색 키워드
+        article_summary (str): 기사 요약 텍스트
+        
+    Returns:
+        tuple: (점수(float), 해설(str))
+    """
+    headers = {
+        "Ocp-Apim-Subscription-Key": azure_subscription_key,
+        "application": azure_application,
+        "compCode": azure_compCode,
+        "userID": azure_userID,
+        "userNM": azure_userNM,
+        "serviceType": azure_serviceType,
+        "Content-Type": "application/json; charset=utf-8"
+    }
+    
+    user_content = f"""당신의 역할은 다음과 같습니다:
+- "키워드"와 "기사 요약"을 입력값으로 받습니다.
+- 기사 요약이 키워드와 얼마나 직접적이고 깊이 있게 연관되는지(키워드 연관성), 그리고 기사 내용이 포장재 회사에 실질적으로 도움이 되는 정보인지(실용성)를 각각 10점 만점으로 평가합니다.
+- 두 점수의 평균을 내어 통합점수(0.5점 단위, 소수 첫째자리까지)를 산출합니다.
+- 통합점수 기준으로 해당 기사의 '유효성'(유효/참고용/유효하지 않음)을 판단합니다.
+- 최종 리턴은 반드시 "X.X점" 형식으로 시작하고, 그 다음 줄부터 해설을 작성하세요.
+- 해설은 정확히 3줄로 작성하세요:
+  1) 첫째 줄: 키워드 연관성 평가 및 점수
+  2) 둘째 줄: 실용성 평가 및 점수
+  3) 셋째 줄: 종합 평가 (유효성 판단 포함)
+
+평가 기준은 다음과 같습니다:
+- 키워드 연관성: 기사 요약이 키워드를 직접적으로, 깊이 있게 다루면 10점, 거의 무관하면 1점.
+- 실용성: 기사 내용이 포장재 회사 실무에 직접적으로 도움이 되면 10점, 전혀 도움되지 않으면 1점.
+- 통합점수 = (키워드 연관성 + 실용성) ÷ 2 (소수 첫째자리)
+- 유효성: 통합점수 8점 이상=유효, 5~7.5점=참고용, 5점 미만=유효하지 않음.
+
+---
+키워드: {keyword}
+기사 요약: {article_summary}
+---"""
+    
+    data = {
+        "messages": [
+            {"role": "system", "content": "당신은 포장재 산업 전문 분석가입니다. 기사의 연관성과 실용성을 객관적으로 평가합니다."},
+            {"role": "user", "content": user_content}
+        ],
+        "temperature": 0.3
+    }
+    
+    try:
+        data_str = json.dumps(data, ensure_ascii=False).encode("utf-8")
+        response = requests.post(azure_endpoint, headers=headers, data=data_str)
+        response.raise_for_status()
+        result = response.json()
+        evaluation = result["choices"][0]["message"]["content"].strip()
+        
+        # 점수와 해설 분리 - 여러 패턴 시도
+        import re
+        
+        # 패턴 1: "X.X점" 형식으로 시작하는 경우
+        score_match = re.match(r'^(\d+(\.\d+)?)[점점]\s*(.*)', evaluation, re.DOTALL)
+        if score_match:
+            score = float(score_match.group(1))
+            explanation = score_match.group(3).strip()
+            return score, explanation
+            
+        # 패턴 2: 숫자로 시작하고 줄바꿈이나 대시(—)로 구분된 경우
+        score_match = re.match(r'^(\d+(\.\d+)?)\s*[\n\r—\-–]*\s*(.*)', evaluation, re.DOTALL)
+        if score_match:
+            score = float(score_match.group(1))
+            explanation = score_match.group(3).strip()
+            return score, explanation
+        
+        # 그 외의 경우: 첫 줄에서 숫자만 추출
+        first_line = evaluation.split('\n', 1)[0].strip()
+        score_match = re.search(r'(\d+(\.\d+)?)', first_line)
+        if score_match:
+            score = float(score_match.group(1))
+            # 첫 줄을 제외한 나머지를 설명으로
+            if '\n' in evaluation:
+                explanation = evaluation.split('\n', 1)[1].strip()
+            else:
+                # 숫자 부분을 제외한 나머지를 설명으로
+                explanation = first_line.replace(score_match.group(0), '').strip()
+                if explanation.startswith('점'):
+                    explanation = explanation[1:].strip()
+            return score, explanation
+            
+        # 모든 시도 실패 시
+        print(f"파싱 실패. 원본 응답: {evaluation}")
+        return 0.0, evaluation
+        
+    except Exception as e:
+        print("평가 중 오류 발생:", e)
+        return 0.0, f"평가 오류 발생: {str(e)}"
+
 
 # --------------------------------------------------------------------
 # 이메일 발송 함수 (SMTP)
@@ -376,6 +469,15 @@ def get_article_text(url, driver, method=None):
     없으면 newspaper3k, trafilatura, goose3, readability 순서로 시도하여 기사 제목, 본문, 날짜를 추출합니다.
     모두 실패하면 Selenium Fallback을 사용합니다.
     """
+    # 초기 헤더 확인으로 403 빠르게 걸러내기
+    try:
+        head_response = requests.head(url, timeout=3)
+        if head_response.status_code == 403:
+            print(f"사이트 접근 거부(403): {url} - 추출 시도 건너뜀")
+            return "제목 없음", "본문 없음", None
+    except Exception:
+        pass  # 헤더 확인 실패 시 계속 진행
+    
     methods = ['newspaper3k', 'trafilatura', 'goose3', 'readability']
     if method:
         methods = [method]
@@ -524,6 +626,26 @@ def process_site_articles(driver, articles):
                 article["date"] = publish_date.strftime("%Y-%m-%d")
         article["np_title"] = np_title
         article["article_text"] = article_text
+        
+        # 기사 평가 추가 (필수 사이트는 필터링하지 않고 평가 점수만 추가)
+        try:
+            # 키워드가 없는 경우 사이트 도메인을 키워드로 사용
+            keyword = article.get('keyword', get_newspaper_name(article["url"]))
+            
+            # 요약이 너무 긴 경우 앞부분만 사용
+            if len(article_text) > 3000:
+                article_summary = article_text[:3000] + "..."
+            else:
+                article_summary = article_text
+                
+            # 기사 평가 실행
+            score, explanation = evaluate_article(keyword, article_summary)
+            article['evaluation_score'] = score
+            article['evaluation_explanation'] = explanation
+            print(f"  -> 필수 사이트 기사 평가 결과: {score}점")
+        except Exception as e:
+            print(f"  -> 기사 평가 중 오류 발생: {e}")
+            
         valid_articles.append(article)
     return valid_articles
 
@@ -556,14 +678,38 @@ def build_and_send_email(valid_articles):
         summary = translate_text(art["article_text"], mode="content")
         newspaper_name = get_newspaper_name(art["url"])
         title_display = art["np_title"]
+        
+        # 평가 점수와 설명이 있는 경우 추가
+        evaluation_score = art.get('evaluation_score', None)
+        evaluation_explanation = art.get('evaluation_explanation', None)
+        
+        # 기사 출처 정보 (키워드 또는 사이트)
+        source_info = ""
+        if art.get("is_must_visit"):
+            source_info = f"<p style=\"margin: 3px 0;\"><strong>출처 사이트:</strong> {newspaper_name}</p>"
+        else:
+            keyword = art.get('keyword', '기타')
+            source_info = f"<p style=\"margin: 3px 0;\"><strong>검색 키워드:</strong> {keyword}</p>"
+        
         if art.get("is_must_visit"):
             title_display = f"★ {title_display} ★"
+            
         article_html = f"""
         <div style="margin-bottom: 20px;">
           <h2 style="margin: 0 0 5px 0;">{title_display}</h2>
           <h3 style="margin: 0 0 10px 0; color: #555;">{translated_title}</h3>
+        """
+        
+        # 평가 점수가 있는 경우 추가 (타이틀 아래로 이동)
+        if evaluation_score is not None:
+            article_html += f"""
+          <p style="margin: 3px 0;"><strong>GPT 연관성 평가 점수:</strong> {evaluation_score:.1f}점</p>
+            """
+            
+        article_html += f"""
           <p style="margin: 3px 0;"><strong>업로드 시간:</strong> {art.get('date', '정보 없음')}</p>
           <p style="margin: 3px 0;"><strong>원문 URL:</strong> <a href="{art['url']}" style="color: #1a73e8; text-decoration: none;">{newspaper_name}</a></p>
+          {source_info}
         </div>
         <div style="margin-bottom: 20px;">
           <p style="margin: 3px 0;"><strong>요약:</strong></p>
@@ -578,6 +724,28 @@ def build_and_send_email(valid_articles):
         article_html += """
           </ul>
         </div>
+        """
+        
+        # 평가 설명이 있는 경우 추가 (요약 다음으로 이동)
+        if evaluation_explanation:
+            article_html += f"""
+        <div style="margin-bottom: 20px;">
+          <p style="margin: 3px 0;"><strong>평가 내용:</strong></p>
+          <ul style="margin: 0 0 0 20px; padding: 0;">
+        """
+            evaluation_lines = [line.strip() for line in evaluation_explanation.splitlines() if line.strip()]
+            if evaluation_lines:
+                eval_items = "".join(f"<li>{l}</li>" for l in evaluation_lines)
+                article_html += eval_items
+            else:
+                article_html += f"<li>{evaluation_explanation}</li>"
+            
+            article_html += """
+          </ul>
+        </div>
+            """
+        
+        article_html += """
         <hr style="border: none; border-top: 2px dashed #888; margin: 30px 0;">
         """
         html_parts.append(article_html)
@@ -642,7 +810,8 @@ def build_and_send_email(valid_articles):
         print("PDF 생성 중 오류 발생:", e)
         pdf_filename = None
     
-    recipient = "cbj6214@dongwon.com"
+    recipient = os.environ.get("EMAIL_RECIPIENT", "cbj6214@dongwon.com")
+    
     email_success = send_email(subject, html_template, recipient, attachment_path=pdf_filename)
     if email_success:
         print(f"이메일 발송 성공: 총 {len(valid_articles)}개 기사 발송됨.")
@@ -655,6 +824,82 @@ def build_and_send_email(valid_articles):
     else:
         print("이메일 발송 오류로 PDF 파일을 삭제하지 않음.")
 
+
+# 평가 점수에 따른 기사 필터링 함수 추가
+def filter_articles_by_evaluation(articles, min_score=5.0, total_limit=30):
+    """
+    기사를 평가하여 점수 기준 이상인 기사만 필터링하는 함수
+    
+    Parameters:
+    - articles: 기사 목록 (딕셔너리 리스트)
+    - min_score: 최소 점수 기준 (기본값: 5.0)
+    - total_limit: 반환할 최대 기사 수 (기본값: 30)
+    
+    Returns:
+    - 평가 점수가 min_score 이상인 기사 목록
+    """
+    # 평가 결과를 저장할 리스트
+    evaluated_articles = []
+    
+    print(f"\n[기사 평가] 총 {len(articles)}개 기사 평가 시작 (최소 점수: {min_score})")
+    
+    # 각 기사에 대해 평가 수행
+    for idx, article in enumerate(articles):
+        keyword = article.get('keyword', '기타')
+        title = article.get('np_title', '제목 없음')
+        print(f"\n[평가 진행] {idx+1}/{len(articles)} - 키워드: {keyword}, 제목: {title}")
+        
+        # 기사 요약 추출
+        article_text = article.get('article_text', '')
+        
+        # 기사가 없는 경우 건너뛰기
+        if article_text == '본문 없음' or not article_text:
+            print("  -> 기사 본문이 없어 평가 제외")
+            continue
+            
+        # 요약이 너무 긴 경우 앞부분만 사용
+        if len(article_text) > 3000:
+            article_summary = article_text[:3000] + "..."
+        else:
+            article_summary = article_text
+            
+        # 기사 평가 실행
+        try:
+            score, explanation = evaluate_article(keyword, article_summary)
+            article['evaluation_score'] = score
+            article['evaluation_explanation'] = explanation
+            
+            print(f"  -> 평가 결과: {score}점 ({explanation[:30]}...)")
+            
+            # 최소 점수 이상인 경우 목록에 추가
+            if score >= min_score:
+                evaluated_articles.append(article)
+                print(f"  -> 평가 통과: {score}점")
+            else:
+                print(f"  -> 평가 미달: {score}점 (기준: {min_score}점)")
+                
+        except Exception as e:
+            print(f"  -> 평가 중 오류 발생: {e}")
+            continue
+    
+    # 평가 점수 기준으로 내림차순 정렬
+    evaluated_articles.sort(key=lambda x: x.get('evaluation_score', 0.0), reverse=True)
+    
+    # 총 제한 개수 적용
+    if len(evaluated_articles) > total_limit:
+        print(f"\n평가 통과 기사 {len(evaluated_articles)}개 중 상위 {total_limit}개만 선택")
+        evaluated_articles = evaluated_articles[:total_limit]
+    else:
+        print(f"\n평가 통과 기사: 총 {len(evaluated_articles)}개")
+    
+    # 각 기사의 최종 평가 결과 출력
+    for idx, article in enumerate(evaluated_articles):
+        keyword = article.get('keyword', '기타')
+        title = article.get('np_title', '제목 없음')
+        score = article.get('evaluation_score', 0.0)
+        print(f"{idx+1}. [{keyword}] {title} - {score}점")
+    
+    return evaluated_articles
 
 # 수정된 scrape_keyword_search_articles 함수
 def scrape_keyword_search_articles(driver):
@@ -785,11 +1030,12 @@ def scrape_keyword_search_articles(driver):
                 print(f"중복 기사 제거: {url}")
     articles = list(unique_articles.values())
 
-    balanced_articles = balance_articles_by_keyword(articles, 10)
-    
+    # balance_articles_by_keyword 대신 기사 추출 및 평가 후 필터링 사용
+    articles = balance_articles_by_keyword(articles, 10)
+
     # --- 2. 각 기사에서 실제 기사 내용 추출 (newspaper3k + Selenium Fallback) ---
     valid_articles = []
-    for art in balanced_articles:
+    for art in articles:
         print(f"\n[기사 추출 시도] URL: {art['url']}")
         # newspaper3k를 사용하여 기사 내용 추출, 실패 시 Selenium Fallback 적용
         np_title, article_text, publish_date = get_article_text(art["url"], driver)
@@ -821,7 +1067,10 @@ def scrape_keyword_search_articles(driver):
         
         valid_articles.append(art)
     
-    return valid_articles
+    # 기사 평가 및 점수 기준 필터링 (최소 점수 5.0, 최대 30개)
+    evaluated_articles = filter_articles_by_evaluation(valid_articles, min_score=5.0, total_limit=30)
+    
+    return evaluated_articles
 
 def balance_articles_by_keyword(articles, total_limit=30, per_keyword_limit=None):
     """

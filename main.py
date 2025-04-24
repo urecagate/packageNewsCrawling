@@ -52,14 +52,12 @@ def main():
 
     # [키워드 검색 기사 스크래핑 테스트]
     try:
-        keyword_articles = scrape_keyword_search_articles(driver)
-        print(f"scrape_keyword_search_articles 기사 수집 완료: {len(keyword_articles)}개")
+        # 키워드 검색, 기사 추출, 평가 및 필터링이 모두 scrape_keyword_search_articles 내에서 처리됨
+        processed_keyword_articles = scrape_keyword_search_articles(driver)
+        print(f"키워드 검색 기사 처리 완료: {len(processed_keyword_articles)}개")
     except Exception as e:
         print("scrape_keyword_search_articles 스크래핑 함수 오류:", e)
-        keyword_articles = []
-
-    processed_keyword_articles = process_keyword_articles(driver, keyword_articles)
-    print(f"최종 유효 기사 수: {len(processed_keyword_articles)}개")
+        processed_keyword_articles = []
     
     # 두 리스트를 합치기
     combined_articles = processed_site_articles + processed_keyword_articles

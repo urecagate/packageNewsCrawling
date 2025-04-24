@@ -10,9 +10,9 @@ azure_userID = "eoaud0012"
 azure_userNM = "daemyeong_lee"
 azure_serviceType = "translate"  # 번역 서비스
 
-email_password = "xbpq aico snlu dlwt"  # 앱 전용 비밀번호(2FA 사용 시) 권장
+# GitHub Actions에서는 환경 변수로 설정
+email_password = os.environ.get("EMAIL_PASSWORD", "")
 sender_email = "dwcbj6214@gmail.com"
-os.environ["EMAIL_PASSWORD"] = email_password
 
 # --------------------------------------------------------------------
 # MUST VISIT 사이트 목록

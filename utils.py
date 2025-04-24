@@ -121,9 +121,10 @@ def create_driver_debug():
     chrome_options.add_argument("--disable-extensions")
     chrome_options.add_argument("--start-maximized")
     
-    # CI 환경에서는 항상 headless 모드 사용
-    if is_ci:
-        chrome_options.add_argument("--headless")
+    # CI 환경 또는 도커 환경에서는 항상 headless 모드 사용
+    if is_ci or os.path.exists("/.dockerenv"):
+        chrome_options.add_argument("--headless=new")
+        print("CI 또는 도커 환경: 헤드리스 모드 활성화")
     
     driver = webdriver.Chrome(options=chrome_options)
     

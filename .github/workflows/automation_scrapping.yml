@@ -1,0 +1,31 @@
+name: Package News Scrapping
+
+on:
+  push:
+    branches: [ master ]
+    paths:
+      - Dockerfile
+      - main.py
+      - utils.py
+      - config.py
+  workflow_dispatch:
+  schedule:
+    - cron: '0 23 * * *'  # UTC 23:00 => 한국 시각 08:00
+
+jobs:
+  run-container:
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/my-automation-image:latest
+      options: --shm-size=2gb
+    runs-on: ubuntu-latest
+    env:
+      EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+      EMAIL_RECIPIENT: ${{ secrets.EMAIL_RECIPIENT }}
+      CI: 'true'
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Run Automation Script
+        run: |
+          python main.py

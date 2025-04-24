@@ -23,59 +23,73 @@ from datetime import datetime as dt
 from dateutil.tz import gettz
 
 def main():
-    chrome_process = start_chrome_debug()
-    driver = create_driver_debug()
-    print("Chrome 드라이버 및 프로세스 준비 완료.")
+    # 환경 변수로 CI 환경 여부 확인
+    is_ci = os.environ.get('CI', 'false').lower() == 'true'
     
-    # ----------------------------------------------------------------
-    # [필수 웹사이트 방문 스크래핑 코드 (통합 테스트용)]
-    # 아래 코드는 나중에 통합 테스트 시 사용하기 위해 주석 처리해두었습니다.
-    site_articles = []
-    for func in [scrape_site1, 
-                 scrape_site2, 
-                 scrape_site3, 
-                 scrape_site4, 
-                 scrape_site5, 
-                 scrape_site6, 
-                 scrape_site7, 
-                 scrape_site8, 
-                 scrape_site9]:
-        try:
-            articles = func(driver)
-            print(f"{func.__name__} 기사 수집 완료: {len(articles)}개")
-            site_articles.extend(articles)
-        except Exception as e:
-            print(f"{func.__name__} 스크래핑 함수 오류:", e)
-    print(f"전체 기사 수: {len(site_articles)}개")
-    processed_site_articles = process_site_articles(driver, site_articles)
-    # ----------------------------------------------------------------
-
-    # [키워드 검색 기사 스크래핑 테스트]
     try:
-        # 키워드 검색, 기사 추출, 평가 및 필터링이 모두 scrape_keyword_search_articles 내에서 처리됨
-        processed_keyword_articles = scrape_keyword_search_articles(driver)
-        print(f"키워드 검색 기사 처리 완료: {len(processed_keyword_articles)}개")
+        chrome_process = start_chrome_debug()
+        driver = create_driver_debug()
+        print("Chrome 드라이버 및 프로세스 준비 완료.")
+        
+        # ----------------------------------------------------------------
+        # [필수 웹사이트 방문 스크래핑 코드 (통합 테스트용)]
+        # 아래 코드는 나중에 통합 테스트 시 사용하기 위해 주석 처리해두었습니다.
+        site_articles = []
+        for func in [scrape_site1, 
+                     scrape_site2, 
+                     scrape_site3, 
+                     scrape_site4, 
+                     scrape_site5, 
+                     scrape_site6, 
+                     scrape_site7, 
+                     scrape_site8, 
+                     scrape_site9]:
+            try:
+                articles = func(driver)
+                print(f"{func.__name__} 기사 수집 완료: {len(articles)}개")
+                site_articles.extend(articles)
+            except Exception as e:
+                print(f"{func.__name__} 스크래핑 함수 오류:", e)
+        print(f"전체 기사 수: {len(site_articles)}개")
+        processed_site_articles = process_site_articles(driver, site_articles)
+        # ----------------------------------------------------------------
+
+        # [키워드 검색 기사 스크래핑 테스트]
+        try:
+            # 키워드 검색, 기사 추출, 평가 및 필터링이 모두 scrape_keyword_search_articles 내에서 처리됨
+            processed_keyword_articles = scrape_keyword_search_articles(driver)
+            print(f"키워드 검색 기사 처리 완료: {len(processed_keyword_articles)}개")
+        except Exception as e:
+            print("scrape_keyword_search_articles 스크래핑 함수 오류:", e)
+            processed_keyword_articles = []
+        
+        # 두 리스트를 합치기
+        combined_articles = processed_site_articles + processed_keyword_articles
+        build_and_send_email(combined_articles)
+
+        # (추가) 구글 스프레드시트에 저장
+        #write_to_spreadsheet(processed_keyword_articles)
+
+        #write_to_csv(processed_keyword_articles)
+        
     except Exception as e:
-        print("scrape_keyword_search_articles 스크래핑 함수 오류:", e)
-        processed_keyword_articles = []
-    
-    # 두 리스트를 합치기
-    combined_articles = processed_site_articles + processed_keyword_articles
-    build_and_send_email(combined_articles)
-
-    # (추가) 구글 스프레드시트에 저장
-    #write_to_spreadsheet(processed_keyword_articles)
-
-    #write_to_csv(processed_keyword_articles)
-    
-    driver.quit()
-
-    # chrome_process가 None이 아니면 종료, None이면 메시지 출력
-    if chrome_process is not None:
-        chrome_process.terminate()
-        print("Chrome 프로세스 종료 완료.")
-    else:
-        print("Chrome 프로세스가 시작되지 않았습니다.")
+        print(f"실행 중 오류 발생: {e}")
+    finally:
+        # 종료 처리
+        if 'driver' in locals() and driver:
+            try:
+                driver.quit()
+                print("드라이버 종료 완료.")
+            except Exception as e:
+                print(f"드라이버 종료 중 오류: {e}")
+                
+        # chrome_process가 None이 아니면 종료
+        if 'chrome_process' in locals() and chrome_process is not None:
+            try:
+                chrome_process.terminate()
+                print("Chrome 프로세스 종료 완료.")
+            except Exception as e:
+                print(f"Chrome 프로세스 종료 중 오류: {e}")
 
 if __name__ == "__main__":
     main()

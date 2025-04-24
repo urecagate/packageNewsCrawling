@@ -610,53 +610,90 @@ def get_newspaper_name(url):
 def process_site_articles(driver, articles):
     valid_articles = []
     total_articles = len(articles)
+    
+    # 드라이버 재초기화 주기 설정
+    RESET_INTERVAL = 3  # 3개 기사마다 드라이버 재시작
+    
     for idx, article in enumerate(articles):
-        print(f"사이트 기사 처리 진행: {idx+1} / {total_articles} - {article['url']}")
-        np_title, article_text, publish_date = get_article_text(article["url"], driver)
-        if np_title == "제목 없음" or article_text == "본문 없음":
-            print("추출 실패로 기사 제외:", article["url"])
-            continue
-        if article.get("is_must_visit"):
-            if publish_date is None:
-                print("MUST VISIT 기사 날짜 정보 없음:", article["url"])
-                continue
-            try:
-                pub_date_obj = parse(publish_date) if not hasattr(publish_date, "date") else publish_date
-            except Exception as e:
-                print("날짜 파싱 오류:", article["url"], e)
-                continue
-            today = dt.now(gettz("Asia/Seoul")).date()
-            yesterday = today - timedelta(days=1)
-            if pub_date_obj.date() != today and pub_date_obj.date() != yesterday:
-                print(f"MUST VISIT 기사 날짜가 오늘/어제가 아님: {article['url']} ({pub_date_obj.date()} != {today} 또는 {yesterday})")
-                continue
-            article["date"] = pub_date_obj.strftime("%Y-%m-%d")
-        else:
-            if publish_date and hasattr(publish_date, "strftime"):
-                article["date"] = publish_date.strftime("%Y-%m-%d")
-        article["np_title"] = np_title
-        article["article_text"] = article_text
-        
-        # 기사 평가 추가 (필수 사이트는 필터링하지 않고 평가 점수만 추가)
         try:
-            # 키워드가 없는 경우 사이트 도메인을 키워드로 사용
-            keyword = article.get('keyword', get_newspaper_name(article["url"]))
+            print(f"사이트 기사 처리 진행: {idx+1} / {total_articles} - {article['url']}")
             
-            # 요약이 너무 긴 경우 앞부분만 사용
-            if len(article_text) > 3000:
-                article_summary = article_text[:3000] + "..."
-            else:
-                article_summary = article_text
+            # 주기적 드라이버 초기화
+            if idx > 0 and idx % RESET_INTERVAL == 0:
+                print(f"--- 드라이버 재초기화 ({idx}/{total_articles}) ---")
+                # 기존 드라이버 종료
+                try:
+                    driver.quit()
+                except Exception as e:
+                    print(f"드라이버 종료 중 오류: {e}")
                 
-            # 기사 평가 실행
-            score, explanation = evaluate_article(keyword, article_summary)
-            article['evaluation_score'] = score
-            article['evaluation_explanation'] = explanation
-            print(f"  -> 필수 사이트 기사 평가 결과: {score}점")
-        except Exception as e:
-            print(f"  -> 기사 평가 중 오류 발생: {e}")
+                # 메모리 정리
+                import gc
+                gc.collect()
+                time.sleep(1)
+                
+                # 새 드라이버 생성
+                driver = create_driver_debug()
+                print("드라이버 재초기화 완료")
             
-        valid_articles.append(article)
+            # 기존 코드: 기사 내용 추출
+            np_title, article_text, publish_date = get_article_text(article["url"], driver)
+            if np_title == "제목 없음" or article_text == "본문 없음":
+                print("추출 실패로 기사 제외:", article["url"])
+                continue
+                
+            if article.get("is_must_visit"):
+                if publish_date is None:
+                    print("MUST VISIT 기사 날짜 정보 없음:", article["url"])
+                    continue
+                try:
+                    pub_date_obj = parse(publish_date) if not hasattr(publish_date, "date") else publish_date
+                except Exception as e:
+                    print("날짜 파싱 오류:", article["url"], e)
+                    continue
+                today = dt.now(gettz("Asia/Seoul")).date()
+                yesterday = today - timedelta(days=1)
+                if pub_date_obj.date() != today and pub_date_obj.date() != yesterday:
+                    print(f"MUST VISIT 기사 날짜가 오늘/어제가 아님: {article['url']} ({pub_date_obj.date()} != {today} 또는 {yesterday})")
+                    continue
+                article["date"] = pub_date_obj.strftime("%Y-%m-%d")
+            else:
+                if publish_date and hasattr(publish_date, "strftime"):
+                    article["date"] = publish_date.strftime("%Y-%m-%d")
+            article["np_title"] = np_title
+            article["article_text"] = article_text
+            
+            # 기사 평가 추가 (필수 사이트는 필터링하지 않고 평가 점수만 추가)
+            try:
+                # 키워드가 없는 경우 사이트 도메인을 키워드로 사용
+                keyword = article.get('keyword', get_newspaper_name(article["url"]))
+                
+                # 요약이 너무 긴 경우 앞부분만 사용
+                if len(article_text) > 3000:
+                    article_summary = article_text[:3000] + "..."
+                else:
+                    article_summary = article_text
+                    
+                # 기사 평가 실행
+                score, explanation = evaluate_article(keyword, article_summary)
+                article['evaluation_score'] = score
+                article['evaluation_explanation'] = explanation
+                print(f"  -> 필수 사이트 기사 평가 결과: {score}점")
+            except Exception as e:
+                print(f"  -> 기사 평가 중 오류 발생: {e}")
+                
+            valid_articles.append(article)
+            
+        except Exception as e:
+            print(f"기사 {idx+1} 처리 중 오류 발생: {e}")
+            # 오류 발생 시 드라이버 재초기화
+            try:
+                driver.quit()
+            except:
+                pass
+            driver = create_driver_debug()
+            print("오류 후 드라이버 재초기화 완료")
+    
     return valid_articles
 
 # --------------------------------------------------------------------
@@ -664,17 +701,55 @@ def process_site_articles(driver, articles):
 def process_keyword_articles(driver, articles):
     valid_articles = []
     total_articles = len(articles)
+    
+    # 드라이버 재초기화 주기 설정
+    RESET_INTERVAL = 3  # 3개 기사마다 드라이버 재시작
+    
     for idx, article in enumerate(articles):
-        print(f"키워드 기사 처리 진행: {idx+1} / {total_articles} - {article['url']}")
-        np_title, article_text, publish_date = get_article_text(article["url"], driver)
-        if np_title == "제목 없음" or article_text == "본문 없음":
-            print("추출 실패로 기사 제외:", article["url"])
-            continue
-        if publish_date and hasattr(publish_date, "strftime"):
-            article["date"] = publish_date.strftime("%Y-%m-%d")
-        article["np_title"] = np_title
-        article["article_text"] = article_text
-        valid_articles.append(article)
+        try:
+            print(f"키워드 기사 처리 진행: {idx+1} / {total_articles} - {article['url']}")
+            
+            # 주기적 드라이버 초기화
+            if idx > 0 and idx % RESET_INTERVAL == 0:
+                print(f"--- 드라이버 재초기화 ({idx}/{total_articles}) ---")
+                # 기존 드라이버 종료
+                try:
+                    driver.quit()
+                except Exception as e:
+                    print(f"드라이버 종료 중 오류: {e}")
+                
+                # 메모리 정리
+                import gc
+                gc.collect()
+                time.sleep(1)
+                
+                # 새 드라이버 생성
+                driver = create_driver_debug()
+                print("드라이버 재초기화 완료")
+            
+            # 기존 코드: 기사 내용 추출
+            np_title, article_text, publish_date = get_article_text(article["url"], driver)
+            if np_title == "제목 없음" or article_text == "본문 없음":
+                print("추출 실패로 기사 제외:", article["url"])
+                continue
+                
+            if publish_date and hasattr(publish_date, "strftime"):
+                article["date"] = publish_date.strftime("%Y-%m-%d")
+                
+            article["np_title"] = np_title
+            article["article_text"] = article_text
+            valid_articles.append(article)
+            
+        except Exception as e:
+            print(f"기사 {idx+1} 처리 중 오류 발생: {e}")
+            # 오류 발생 시 드라이버 재초기화
+            try:
+                driver.quit()
+            except:
+                pass
+            driver = create_driver_debug()
+            print("오류 후 드라이버 재초기화 완료")
+    
     return valid_articles
 
 # --------------------------------------------------------------------
@@ -858,6 +933,10 @@ def filter_articles_by_evaluation(articles, min_score=None, total_limit=None):
     # 평가 결과를 저장할 리스트
     evaluated_articles = []
     
+    # API 호출 관련 변수 설정
+    API_RETRY_COUNT = 3
+    API_RETRY_DELAY = 2
+    
     print(f"\n[기사 평가] 총 {len(articles)}개 기사 평가 시작 (최소 점수: {min_score}, 최대 기사 수: {total_limit})")
     
     # 각 기사에 대해 평가 수행
@@ -865,6 +944,9 @@ def filter_articles_by_evaluation(articles, min_score=None, total_limit=None):
         keyword = article.get('keyword', '기타')
         title = article.get('np_title', '제목 없음')
         print(f"\n[평가 진행] {idx+1}/{len(articles)} - 키워드: {keyword}, 제목: {title}")
+        
+        # 메모리 사용량 로깅 (선택사항)
+        log_memory_usage(f"기사 평가 {idx+1} 전")
         
         # 기사 요약 추출
         article_text = article.get('article_text', '')
@@ -880,24 +962,46 @@ def filter_articles_by_evaluation(articles, min_score=None, total_limit=None):
         else:
             article_summary = article_text
             
-        # 기사 평가 실행
-        try:
-            score, explanation = evaluate_article(keyword, article_summary)
-            article['evaluation_score'] = score
-            article['evaluation_explanation'] = explanation
-            
-            print(f"  -> 평가 결과: {score}점 ({explanation[:30]}...)")
-            
-            # 최소 점수 이상인 경우 목록에 추가
-            if score >= min_score:
-                evaluated_articles.append(article)
-                print(f"  -> 평가 통과: {score}점")
-            else:
-                print(f"  -> 평가 미달: {score}점 (기준: {min_score}점)")
+        # 기사 평가 실행 (재시도 로직 추가)
+        for attempt in range(API_RETRY_COUNT):
+            try:
+                start_time = time.time()
+                score, explanation = evaluate_article(keyword, article_summary)
+                elapsed = time.time() - start_time
+                print(f"  -> API 응답 시간: {elapsed:.2f}초")
                 
-        except Exception as e:
-            print(f"  -> 평가 중 오류 발생: {e}")
-            continue
+                article['evaluation_score'] = score
+                article['evaluation_explanation'] = explanation
+                
+                print(f"  -> 평가 결과: {score}점 ({explanation[:30] if explanation else '설명 없음'}...)")
+                
+                # 최소 점수 이상인 경우 목록에 추가
+                if score >= min_score:
+                    evaluated_articles.append(article)
+                    print(f"  -> 평가 통과: {score}점")
+                else:
+                    print(f"  -> 평가 미달: {score}점 (기준: {min_score}점)")
+                
+                # 성공 시 재시도 루프 종료
+                break
+                
+            except Exception as e:
+                print(f"  -> 평가 시도 {attempt+1}/{API_RETRY_COUNT} 중 오류: {e}")
+                if attempt < API_RETRY_COUNT - 1:
+                    retry_delay = API_RETRY_DELAY * (attempt + 1)
+                    print(f"  -> {retry_delay}초 후 재시도...")
+                    time.sleep(retry_delay)
+                else:
+                    print(f"  -> 모든 재시도 실패, 기사 평가 건너뛰기")
+                    
+        # 메모리 사용량 로깅 (선택사항)
+        log_memory_usage(f"기사 평가 {idx+1} 후")
+        
+        # 주기적 메모리 정리
+        if idx > 0 and idx % 10 == 0:
+            print(f"--- 메모리 정리 중 ({idx}/{len(articles)}) ---")
+            import gc
+            gc.collect()
     
     # 평가 점수 기준으로 내림차순 정렬
     evaluated_articles.sort(key=lambda x: x.get('evaluation_score', 0.0), reverse=True)
@@ -917,6 +1021,21 @@ def filter_articles_by_evaluation(articles, min_score=None, total_limit=None):
         print(f"{idx+1}. [{keyword}] {title} - {score}점")
     
     return evaluated_articles
+
+# 메모리 사용량 모니터링 함수 추가
+def log_memory_usage(label=""):
+    """
+    현재 프로세스의 메모리 사용량을 로깅하는 함수
+    """
+    try:
+        import psutil
+        process = psutil.Process()
+        memory_info = process.memory_info()
+        print(f"[메모리] {label}: {memory_info.rss / (1024 * 1024):.2f} MB")
+    except ImportError:
+        print("[메모리] psutil 라이브러리가 설치되지 않았습니다.")
+    except Exception as e:
+        print(f"[메모리] 측정 오류: {e}")
 
 # 수정된 scrape_keyword_search_articles 함수
 def scrape_keyword_search_articles(driver):

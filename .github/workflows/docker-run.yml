@@ -11,6 +11,19 @@ on:
       - config.py
       - scrapers/**
   workflow_dispatch:
+    inputs:
+      article_limit:
+        description: '수집할 최대 기사 수'
+        required: false
+        default: '30'
+      min_score:
+        description: '기사 최소 평가 점수'
+        required: false
+        default: '5.0'
+      per_keyword_limit:
+        description: '키워드당 최대 기사 수'
+        required: false
+        default: '10'
 
 jobs:
   build-push-run:
@@ -35,4 +48,4 @@ jobs:
         run: docker images
 
       - name: Run Docker Container
-        run: docker run -e EMAIL_PASSWORD="${{ secrets.EMAIL_PASSWORD }}" -e EMAIL_RECIPIENT="${{ secrets.EMAIL_RECIPIENT }}" -e CI=true --rm ghcr.io/${{ github.repository_owner }}/my-automation-image:latest
+        run: docker run -e EMAIL_PASSWORD="${{ secrets.EMAIL_PASSWORD }}" -e EMAIL_RECIPIENT="${{ vars.EMAIL_RECIPIENT }}" -e CI=true -e ARTICLE_LIMIT="${{ vars.ARTICLE_LIMIT || github.event.inputs.article_limit || '30' }}" -e MIN_ARTICLE_SCORE="${{ vars.MIN_ARTICLE_SCORE || github.event.inputs.min_score || '5.0' }}" -e PER_KEYWORD_LIMIT="${{ vars.PER_KEYWORD_LIMIT || github.event.inputs.per_keyword_limit || '10' }}" --rm ghcr.io/${{ github.repository_owner }}/my-automation-image:latest

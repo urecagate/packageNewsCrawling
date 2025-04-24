@@ -46,6 +46,14 @@ TITLE_FALLBACK_SELECTORS = [
 # DEBUG_MODE 환경변수에 따라 디버깅 모드 여부 판단 (true이면 디버깅 모드)
 DEBUG_MODE = False
 print(DEBUG_MODE)
+
+# 환경 변수에서 기사 개수 제한 가져오기
+DEFAULT_ARTICLE_LIMIT = 30  # 기본값
+ARTICLE_LIMIT = int(os.environ.get("ARTICLE_LIMIT", DEFAULT_ARTICLE_LIMIT))
+MIN_SCORE = float(os.environ.get("MIN_ARTICLE_SCORE", "5.0"))
+
+print(f"기사 개수 제한: {ARTICLE_LIMIT}, 최소 점수: {MIN_SCORE}")
+
 # --------------------------------------------------------------------
 # Chrome 프로세스를 종료하는 함수 (OS에 따라 분기)
 def kill_chrome():
@@ -827,22 +835,29 @@ def build_and_send_email(valid_articles):
 
 
 # 평가 점수에 따른 기사 필터링 함수 추가
-def filter_articles_by_evaluation(articles, min_score=5.0, total_limit=30):
+def filter_articles_by_evaluation(articles, min_score=None, total_limit=None):
     """
     기사를 평가하여 점수 기준 이상인 기사만 필터링하는 함수
     
     Parameters:
     - articles: 기사 목록 (딕셔너리 리스트)
-    - min_score: 최소 점수 기준 (기본값: 5.0)
-    - total_limit: 반환할 최대 기사 수 (기본값: 30)
+    - min_score: 최소 점수 기준 (기본값: 환경변수 또는 5.0)
+    - total_limit: 반환할 최대 기사 수 (기본값: 환경변수 또는 30)
     
     Returns:
     - 평가 점수가 min_score 이상인 기사 목록
     """
+    # 환경 변수 또는 기본값 사용
+    if min_score is None:
+        min_score = MIN_SCORE
+    
+    if total_limit is None:
+        total_limit = ARTICLE_LIMIT
+    
     # 평가 결과를 저장할 리스트
     evaluated_articles = []
     
-    print(f"\n[기사 평가] 총 {len(articles)}개 기사 평가 시작 (최소 점수: {min_score})")
+    print(f"\n[기사 평가] 총 {len(articles)}개 기사 평가 시작 (최소 점수: {min_score}, 최대 기사 수: {total_limit})")
     
     # 각 기사에 대해 평가 수행
     for idx, article in enumerate(articles):
@@ -1031,8 +1046,9 @@ def scrape_keyword_search_articles(driver):
                 print(f"중복 기사 제거: {url}")
     articles = list(unique_articles.values())
 
-    # balance_articles_by_keyword 대신 기사 추출 및 평가 후 필터링 사용
-    articles = balance_articles_by_keyword(articles, 10)
+    # 환경 변수에서 키워드당 최대 기사 수 가져오기
+    per_keyword_limit = int(os.environ.get("PER_KEYWORD_LIMIT", "10"))
+    articles = balance_articles_by_keyword(articles, ARTICLE_LIMIT, per_keyword_limit)
 
     # --- 2. 각 기사에서 실제 기사 내용 추출 (newspaper3k + Selenium Fallback) ---
     valid_articles = []
@@ -1068,23 +1084,27 @@ def scrape_keyword_search_articles(driver):
         
         valid_articles.append(art)
     
-    # 기사 평가 및 점수 기준 필터링 (최소 점수 5.0, 최대 30개)
-    evaluated_articles = filter_articles_by_evaluation(valid_articles, min_score=5.0, total_limit=30)
+    # 기사 평가 및 점수 기준 필터링 (환경 변수에서 가져온 값 사용)
+    evaluated_articles = filter_articles_by_evaluation(valid_articles)
     
     return evaluated_articles
 
-def balance_articles_by_keyword(articles, total_limit=30, per_keyword_limit=None):
+def balance_articles_by_keyword(articles, total_limit=None, per_keyword_limit=None):
     """
     기사 목록을 키워드별로 균등하게 배분하면서 전체 개수를 제한하는 함수
     
     Parameters:
     - articles: 기사 목록 (딕셔너리 리스트)
-    - total_limit: 반환할 최대 기사 수 (기본값: 30)
+    - total_limit: 반환할 최대 기사 수 (기본값: 환경변수 또는 30)
     - per_keyword_limit: 키워드당 최대 기사 수 (기본값: None, 자동 계산)
     
     Returns:
     - 키워드별로 균등하게 배분된 기사 목록
     """
+    # 환경 변수 또는 기본값 사용
+    if total_limit is None:
+        total_limit = ARTICLE_LIMIT
+    
     # 키워드별로 기사 그룹화
     keyword_groups = {}
     for article in articles:

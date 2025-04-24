@@ -20,3 +20,9 @@ ENV/
 .vscode/
 *.swp
 *.swo 
+
+# PDF 파일
+*.pdf
+
+# 주피터 노트북
+*.ipynb 

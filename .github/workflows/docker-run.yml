@@ -9,6 +9,7 @@ on:
       - main.py
       - utils.py
       - config.py
+      - scrapers/**
   workflow_dispatch:
 
 jobs:

@@ -3,7 +3,7 @@ import re
 from selenium.webdriver.common.by import By
 from utils import close_popups
 from dateutil.parser import parse as date_parse
-from datetime import datetime
+from datetime import datetime, timedelta
 from utils import close_popups, dt, gettz
 def scrape_site4(driver):
     articles = []
@@ -70,17 +70,18 @@ def scrape_site4(driver):
     
     print(f"scrape_site4 - 총 후보 기사 수: {len(candidates)}")
 
-    # 오늘 날짜 필터링을 원한다면 아래와 같이 처리할 수 있습니다.
-    today = datetime.now().date()
+    # 오늘과 어제 날짜 필터링
+    today = dt.now(gettz("Asia/Seoul")).date()
+    yesterday = today - timedelta(days=1)
     valid_candidates = []
     for cand in candidates:
         try:
             clean_date = re.sub(r'(\d+)(st|nd|rd|th)', r'\1', cand["date_text"])
             pub_date = date_parse(clean_date, fuzzy=True).date()
-            if pub_date == today:
+            if pub_date == today or pub_date == yesterday:
                 valid_candidates.append(cand)
             else:
-                print(f"scrape_site4 - 날짜 불일치: {cand['title']} ({pub_date} != {today})")
+                print(f"scrape_site4 - 날짜 불일치: {cand['title']} ({pub_date} != {today} 또는 {yesterday})")
         except Exception as e:
             print("scrape_site4 - 날짜 파싱 오류:", cand["date_text"], e)
     candidates = valid_candidates

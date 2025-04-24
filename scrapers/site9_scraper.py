@@ -2,6 +2,7 @@ import time
 import re
 from selenium.webdriver.common.by import By
 from dateutil.parser import parse as date_parse
+from datetime import timedelta
 from utils import close_popups, dt, gettz
 
 def scrape_site9(driver):
@@ -25,6 +26,7 @@ def scrape_site9(driver):
 
     candidates = []
     today = dt.now(gettz("Asia/Seoul")).date()
+    yesterday = today - timedelta(days=1)
 
     # 1. 메인 그리드 처리 (FIFO: 한 건만 있으므로 날짜 불일치 시 건너뜀)
     try:
@@ -52,7 +54,7 @@ def scrape_site9(driver):
                 print("scrape_site9 - 메인 그리드 날짜 파싱 오류:", date_str, e)
                 pub_date = None
 
-            if pub_date == today:
+            if pub_date == today or pub_date == yesterday:
                 candidates.append({
                     "url": article_url,
                     "title": article_title,
@@ -61,7 +63,7 @@ def scrape_site9(driver):
                 })
                 print(f"scrape_site9 - Main Grid URL 수집 성공: {article_url}")
             else:
-                print(f"scrape_site9 - Main Grid 날짜 불일치: {article_title} ({pub_date} != {today})")
+                print(f"scrape_site9 - Main Grid 날짜 불일치: {article_title} ({pub_date} != {today} 또는 {yesterday})")
         except Exception as e:
             print("scrape_site9 - 메인 그리드 기사 추출 실패:", e)
     except Exception as e:
@@ -95,7 +97,7 @@ def scrape_site9(driver):
                     print("scrape_site9 - Top Stories 날짜 파싱 오류:", date_str, e)
                     continue
 
-                if pub_date == today:
+                if pub_date == today or pub_date == yesterday:
                     candidates.append({
                         "url": article_url,
                         "title": article_title,
@@ -104,8 +106,8 @@ def scrape_site9(driver):
                     })
                     print(f"scrape_site9 - Top Stories [{idx+1}/{len(top_stories_elements)}] URL 및 날짜 수집 성공: {article_url} / {date_str}")
                 else:
-                    print(f"scrape_site9 - Top Stories FIFO break: {article_title} ({pub_date} != {today})")
-                    break  # FIFO: 더 이상 후보가 오늘 날짜가 아니면 종료
+                    print(f"scrape_site9 - Top Stories FIFO break: {article_title} ({pub_date} != {today} 또는 {yesterday})")
+                    break  # FIFO: 더 이상 후보가 오늘/어제 날짜가 아니면 종료
             except Exception as e:
                 print(f"scrape_site9 - Top Stories [{idx+1}/{len(top_stories_elements)}] 추출 실패:", e)
     except Exception as e:
@@ -151,7 +153,7 @@ def scrape_site9(driver):
             except Exception as e:
                 print("scrape_site9 - The Latest 날짜 파싱 오류:", date_str, e)
                 continue
-            if pub_date == today:
+            if pub_date == today or pub_date == yesterday:
                 candidates.append({
                     "url": article_url,
                     "title": article_title,
@@ -160,16 +162,16 @@ def scrape_site9(driver):
                 })
                 print(f"scrape_site9 - The Latest [{idx+1}/{len(valid_latest_elements)}] URL 수집 성공: {article_url}")
             else:
-                print(f"scrape_site9 - The Latest FIFO break: {article_title} ({pub_date} != {today})")
-                break  # FIFO: 더 이상 오늘 날짜가 아니면 종료
+                print(f"scrape_site9 - The Latest FIFO break: {article_title} ({pub_date} != {today} 또는 {yesterday})")
+                break  # FIFO: 더 이상 오늘/어제 날짜가 아니면 종료
         # End of The Latest 처리
     except Exception as e:
         print("scrape_site9 - The Latest 섹션 미발견:", e)
 
     print(f"scrape_site9 - 총 후보 기사 수: {len(candidates)}개")
-    print(f"scrape_site9 - 오늘 날짜 후보 기사 수: {len(candidates)}개")  # FIFO 처리 시, candidates에 이미 오늘날짜 기사만 남음
+    print(f"scrape_site9 - 오늘/어제 날짜 후보 기사 수: {len(candidates)}개")  # FIFO 처리 시, candidates에 이미 오늘/어제 날짜 기사만 남음
 
-    # 4. 오늘 날짜 후보 기사에 대해 개별 페이지에서 제목 및 본문 재추출
+    # 4. 오늘/어제 날짜 후보 기사에 대해 개별 페이지에서 제목 및 본문 재추출
     for idx, cand in enumerate(candidates):
         try:
             print(f"scrape_site9 - 기사 추출 진행: {idx+1}/{len(candidates)} - {cand['url']}")

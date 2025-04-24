@@ -4,6 +4,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from dateutil.parser import parse as date_parse
+from datetime import timedelta
 from utils import close_popups, dt, gettz
 
 def is_logged_in_beveragedaily(driver, wait_time=5):
@@ -86,10 +87,10 @@ def login_beveragedaily(driver):
 def scrape_site6(driver):
     """
     BeverageDaily 뉴스 섹션의 10개 URL에서 리스트 형식 기사를 FIFO 방식으로 스캔합니다.
-    각 URL에서 리스트형 기사 후보를 순차적으로 확인하며, 첫 번째로 오늘 날짜가 아닌 항목이 나오면
+    각 URL에서 리스트형 기사 후보를 순차적으로 확인하며, 첫 번째로 어제/오늘 날짜가 아닌 항목이 나오면
     해당 URL의 처리를 중단하고 다음 URL로 넘어갑니다.
     Headlines와 Products 섹션(필요시)도 제외하도록 필터링할 수 있습니다.
-    오늘 날짜 기사에 대해서만 개별 기사 페이지에 진입하여 제목, 본문, (업데이트된) 날짜를 추출합니다.
+    어제/오늘 날짜 기사에 대해서만 개별 기사 페이지에 진입하여 제목, 본문, (업데이트된) 날짜를 추출합니다.
     """
     articles = []
     try:
@@ -114,6 +115,7 @@ def scrape_site6(driver):
     
     seen_urls = set()
     today = dt.now(gettz("Asia/Seoul")).date()
+    yesterday = today - timedelta(days=1)
 
     # 각 URL의 인덱스 표시
     total_urls = len(urls)
@@ -135,7 +137,7 @@ def scrape_site6(driver):
             print("scrape_site6 - List 형식 기사 요소 찾기 실패:", e)
             continue
 
-        # FIFO 방식: 순차적으로 처리, 첫 번째로 오늘 날짜가 아닌 항목이 나오면 break
+        # FIFO 방식: 순차적으로 처리, 첫 번째로 어제/오늘 날짜가 아닌 항목이 나오면 break
         for idx, elem in enumerate(list_elements):
             try:
                 title_elem = elem.find_element(By.CSS_SELECTOR, "h2.story-item-text-headline a")
@@ -149,9 +151,9 @@ def scrape_site6(driver):
                 if not publish_date:
                     publish_date = date_elem.text.strip()
                 pub_date = date_parse(publish_date, fuzzy=True).date()
-                if pub_date != today:
-                    print(f"scrape_site6 - 날짜 불일치 (URL {page}): {article_title} ({pub_date} != {today}). 해당 URL 처리를 종료합니다.")
-                    break  # FIFO: 오늘 날짜가 아닌 기사가 나오면 해당 URL은 더 이상 처리하지 않음.
+                if pub_date != today and pub_date != yesterday:
+                    print(f"scrape_site6 - 날짜 불일치 (URL {page}): {article_title} ({pub_date} != {today} 또는 {yesterday}). 해당 URL 처리를 종료합니다.")
+                    break  # FIFO: 오늘/어제 날짜가 아닌 기사가 나오면 해당 URL은 더 이상 처리하지 않음.
                 seen_urls.add(article_url)
                 # 후보 기사 추가
                 candidate = {

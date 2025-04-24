@@ -3,6 +3,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import time
 from dateutil.parser import parse as date_parse
+from datetime import timedelta
 from utils import close_popups, dt, gettz
 
 
@@ -140,17 +141,18 @@ def scrape_site5(driver):
 
         print(f"scrape_site5 - 총 후보 기사 수 (현재 페이지): {len(candidates)}개")
 
-        # 오늘 날짜 기준 후보 필터링
+        # 오늘과 어제 날짜 기준 후보 필터링
         today = dt.now(gettz("Asia/Seoul")).date()
+        yesterday = today - timedelta(days=1)
         valid_candidates = []
         for cand in candidates:
             if cand["type"] == "list":
                 try:
                     pub_date = date_parse(cand["date_text"], fuzzy=True).date()
-                    if pub_date == today:
+                    if pub_date == today or pub_date == yesterday:
                         valid_candidates.append(cand)
                     else:
-                        print(f"scrape_site5 - List 날짜 불일치: {cand['title']} ({pub_date} != {today})")
+                        print(f"scrape_site5 - List 날짜 불일치: {cand['title']} ({pub_date} != {today} 또는 {yesterday})")
                 except Exception as e:
                     print("scrape_site5 - List 날짜 파싱 오류:", cand["date_text"], e)
             else:
@@ -187,8 +189,8 @@ def scrape_site5(driver):
                 if cand["type"] == "grid":
                     try:
                         pub_date = date_parse(cand["date_text"], fuzzy=True).date()
-                        if pub_date != today:
-                            print(f"scrape_site5 - Grid 기사 날짜 불일치 (개별 추출): {cand['title']} ({pub_date} != {today})")
+                        if pub_date != today and pub_date != yesterday:
+                            print(f"scrape_site5 - Grid 기사 날짜 불일치 (개별 추출): {cand['title']} ({pub_date} != {today} 또는 {yesterday})")
                             continue
                     except Exception as e:
                         print("scrape_site5 - Grid 날짜 파싱 오류:", cand["date_text"], e)

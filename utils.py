@@ -626,8 +626,9 @@ def process_site_articles(driver, articles):
                 print("날짜 파싱 오류:", article["url"], e)
                 continue
             today = dt.now(gettz("Asia/Seoul")).date()
-            if pub_date_obj.date() != today:
-                print("MUST VISIT 기사 날짜가 당일 아님:", article["url"])
+            yesterday = today - timedelta(days=1)
+            if pub_date_obj.date() != today and pub_date_obj.date() != yesterday:
+                print(f"MUST VISIT 기사 날짜가 오늘/어제가 아님: {article['url']} ({pub_date_obj.date()} != {today} 또는 {yesterday})")
                 continue
             article["date"] = pub_date_obj.strftime("%Y-%m-%d")
         else:

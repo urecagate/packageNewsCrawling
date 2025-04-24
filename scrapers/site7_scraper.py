@@ -2,6 +2,7 @@ import time
 import re
 from selenium.webdriver.common.by import By
 from dateutil.parser import parse as date_parse
+from datetime import timedelta
 from utils import dt, gettz
 
 def safe_close_popups(driver):
@@ -56,6 +57,7 @@ def scrape_site7(driver):
     # 2. FIFO 전략: 후보 기사를 순서대로 개별 페이지로 들어가 날짜를 확인
     # (목록에 날짜 정보가 없으므로 개별 기사에서 날짜 추출)
     today = dt.now(gettz("Asia/Seoul")).date()
+    yesterday = today - timedelta(days=1)
     valid_candidates = []
     for idx, cand in enumerate(candidates):
         try:
@@ -68,20 +70,20 @@ def scrape_site7(driver):
             # 서수(예: "2nd") 제거: "2nd April, 2025" → "2 April, 2025"
             clean_date_text = re.sub(r'(\d+)(st|nd|rd|th)', r'\1', date_text)
             pub_date = date_parse(clean_date_text, fuzzy=True).date()
-            if pub_date == today:
+            if pub_date == today or pub_date == yesterday:
                 cand["date_text"] = date_text
                 valid_candidates.append(cand)
                 print(f"scrape_site7 - FIFO: 후보 {idx+1} 날짜 일치 ({pub_date})")
             else:
-                print(f"scrape_site7 - FIFO 종료: 후보 {idx+1}의 날짜 {pub_date} != 오늘 {today}")
-                break  # 오늘 날짜가 아닌 후보가 나오면 더 이상 처리하지 않음.
+                print(f"scrape_site7 - FIFO 종료: 후보 {idx+1}의 날짜 {pub_date} != 오늘 {today} 또는 어제 {yesterday}")
+                break  # 오늘/어제 날짜가 아닌 후보가 나오면 더 이상 처리하지 않음.
         except Exception as e:
             print("scrape_site7 - 날짜 추출 실패:", cand["url"], e)
             continue
 
-    print(f"scrape_site7 - 오늘 날짜 기사 후보 수: {len(valid_candidates)}개")
+    print(f"scrape_site7 - 오늘/어제 날짜 기사 후보 수: {len(valid_candidates)}개")
 
-    # 3. 오늘 날짜 후보들에 대해 개별 페이지에서 제목과 본문 재추출
+    # 3. 오늘/어제 날짜 후보들에 대해 개별 페이지에서 제목과 본문 재추출
     total_valid = len(valid_candidates)
     for idx, cand in enumerate(valid_candidates):
         try:

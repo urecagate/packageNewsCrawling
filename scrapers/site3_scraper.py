@@ -2,6 +2,7 @@ import time
 import re
 from selenium.webdriver.common.by import By
 from dateutil.parser import parse as date_parse
+from datetime import timedelta
 from utils import close_popups, dt, gettz
 
 def scrape_site3(driver):
@@ -75,25 +76,26 @@ def scrape_site3(driver):
         print("scrape_site3 - 후보 기사 요소 찾기 실패:", e)
         return articles
 
-    # 오늘 날짜 비교 (후보 grid 항목에 포함된 날짜 정보를 사용)
+    # 오늘과 어제 날짜 비교 (후보 grid 항목에 포함된 날짜 정보를 사용)
     today = dt.now(gettz("Asia/Seoul")).date()
+    yesterday = today - timedelta(days=1)
     valid_candidates = []
     for cand in candidates:
         try:
             # 예: "2 Apr 2025" 혹은 "2nd April, 2025" → 숫자 접미사 제거
             clean_date = re.sub(r'(\d+)(st|nd|rd|th)', r'\1', cand["date_text"])
             pub_date = date_parse(clean_date, fuzzy=True).date()
-            if pub_date == today:
+            if pub_date == today or pub_date == yesterday:
                 valid_candidates.append(cand)
             else:
-                print(f"scrape_site3 - 날짜 불일치: {cand['title']} ({pub_date} != {today})")
+                print(f"scrape_site3 - 날짜 불일치: {cand['title']} ({pub_date} != {today} 또는 {yesterday})")
         except Exception as e:
             print("scrape_site3 - 날짜 파싱 오류:", cand["date_text"], e)
 
     total_valid = len(valid_candidates)
-    print(f"scrape_site3 - 오늘 날짜 후보 기사 수: {total_valid}")
+    print(f"scrape_site3 - 오늘/어제 날짜 후보 기사 수: {total_valid}")
 
-    # 오늘 날짜로 필터링된 후보들에 대해 개별 기사 페이지에서 본문 추출
+    # 오늘/어제 날짜로 필터링된 후보들에 대해 개별 기사 페이지에서 본문 추출
     for idx, cand in enumerate(valid_candidates):
         try:
             print(f"scrape_site3 - 기사 추출 진행: {idx+1} / {total_valid} - {cand['url']}")

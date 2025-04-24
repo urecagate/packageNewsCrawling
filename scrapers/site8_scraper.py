@@ -2,6 +2,7 @@ import time
 import re
 from selenium.webdriver.common.by import By
 from dateutil.parser import parse as date_parse
+from datetime import timedelta
 from utils import close_popups, dt, gettz
 
 def scrape_site8(driver):
@@ -98,8 +99,9 @@ def scrape_site8(driver):
     candidates = list(unique_candidates.values())
     print(f"scrape_site8 - 총 후보 기사 수 (중복 제거 후): {len(candidates)}개")
     
-    # 4. 오늘 날짜 후보 필터링 (날짜 정보: date_text)
+    # 4. 오늘과 어제 날짜 후보 필터링 (날짜 정보: date_text)
     today = dt.now(gettz("Asia/Seoul")).date()
+    yesterday = today - timedelta(days=1)
     valid_candidates = []
     for cand in candidates:
         try:
@@ -111,15 +113,15 @@ def scrape_site8(driver):
             # 서수(ordinal suffix) 제거 (예: "3rd" → "3")
             clean_date_text = re.sub(r'(\d+)(st|nd|rd|th)', r'\1', date_text)
             pub_date = date_parse(clean_date_text, fuzzy=True).date()
-            if pub_date == today:
+            if pub_date == today or pub_date == yesterday:
                 valid_candidates.append(cand)
             else:
-                print(f"scrape_site8 - 날짜 불일치: {cand.get('title')} ({pub_date} != {today})")
+                print(f"scrape_site8 - 날짜 불일치: {cand.get('title')} ({pub_date} != {today} 또는 {yesterday})")
         except Exception as e:
             print("scrape_site8 - 날짜 파싱 오류:", cand.get("date_text"), e)
-    print(f"scrape_site8 - 오늘 날짜 후보 기사 수: {len(valid_candidates)}개")
+    print(f"scrape_site8 - 오늘/어제 날짜 후보 기사 수: {len(valid_candidates)}개")
     
-    # 5. 오늘 날짜 후보 기사에 대해 개별 페이지에서 제목 및 본문 추출
+    # 5. 오늘/어제 날짜 후보 기사에 대해 개별 페이지에서 제목 및 본문 추출
     total_valid = len(valid_candidates)
     for idx, cand in enumerate(valid_candidates):
         try:

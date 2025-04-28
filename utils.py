@@ -273,10 +273,7 @@ def evaluate_article(keyword, article_summary):
 - 두 점수의 평균을 내어 통합점수(0.5점 단위, 소수 첫째자리까지)를 산출합니다.
 - 통합점수 기준으로 해당 기사의 '유효성'(유효/참고용/유효하지 않음)을 판단합니다.
 - 최종 리턴은 반드시 "X.X점" 형식으로 시작하고, 그 다음 줄부터 해설을 작성하세요.
-- 해설은 정확히 3줄로 작성하세요:
-  1) 첫째 줄: 키워드 연관성 평가 및 점수
-  2) 둘째 줄: 실용성 평가 및 점수
-  3) 셋째 줄: 종합 평가 (유효성 판단 포함)
+- 해설은 키워드 연관성, 실용성 평가를 포함하여 한줄로 요약하세요.
 
 평가 기준은 다음과 같습니다:
 - 키워드 연관성: 기사 요약이 키워드를 직접적으로, 깊이 있게 다루면 10점, 거의 무관하면 1점.
@@ -606,6 +603,77 @@ def get_newspaper_name(url):
     return domain
 
 # --------------------------------------------------------------------
+# 패키징 관련 키워드를 기사 내용에 따라 할당하는 함수
+def assign_packaging_keywords(article):
+    """
+    기사 URL과 내용을 분석하여 적절한 패키지 산업 관련 키워드 할당
+    
+    Args:
+        article (dict): 기사 정보를 담은 딕셔너리 (np_title, article_text, url 필드 포함)
+        
+    Returns:
+        str: 패키징 산업 관련 키워드
+    """
+    # 기본 키워드 (fallback)
+    domain = get_newspaper_name(article["url"])
+    
+    # 기사 제목과 내용
+    title = article.get("np_title", "").lower()
+    content = article.get("article_text", "").lower()
+    
+    # 키워드 맵핑 (영어 키워드: 패턴 리스트)
+    keyword_mapping = {
+        "Sustainable Packaging": ["sustainable", "eco", "green", "environment", "친환경"],
+        "Biodegradable Materials": ["biodegradable", "compostable", "생분해", "분해성"],
+        "Recycling Technology": ["recycl", "circular", "재활용", "순환"],
+        "Smart Packaging": ["smart", "intelligent", "스마트", "인텔리전트"],
+        "Food Packaging": ["food", "식품", "식료품"],
+        "Beverage Packaging": ["beverage", "drink", "음료"],
+        "E-commerce Packaging": ["e-commerce", "ecommerce", "online", "이커머스", "전자상거래"],
+        "Digital Printing": ["digital print", "디지털 인쇄"],
+        "Packaging Regulations": ["regulat", "compliance", "law", "규제", "법규"],
+        "Packaging Market": ["market", "industry", "growth", "시장", "산업"],
+        "Flexible Packaging": ["flexible", "flexpack", "플렉시블"],
+        "Rigid Packaging": ["rigid", "hard", "경질"],
+        "Packaging Innovation": ["innovation", "innovative", "new", "혁신"],
+        "Plastic Packaging": ["plastic", "플라스틱"],
+        "Paper Packaging": ["paper", "paperboard", "종이", "지류"],
+        "Metal Packaging": ["metal", "can", "금속", "캔"],
+        "Glass Packaging": ["glass", "bottle", "유리", "병"],
+        "Packaging Machinery": ["machinery", "machine", "equipment", "기계", "장비"]
+    }
+    
+    # 제목과 내용에서 키워드 패턴 검색 (최대 2000자 제한)
+    text_to_search = (title + " " + content[:2000]).lower()
+    
+    # 패턴 매칭 수 기준 점수 계산
+    keyword_scores = {}
+    
+    for keyword, patterns in keyword_mapping.items():
+        score = 0
+        for pattern in patterns:
+            occurrences = text_to_search.count(pattern)
+            if occurrences > 0:
+                # 제목에 패턴이 있으면 가중치 부여
+                if pattern in title:
+                    score += occurrences * 3
+                else:
+                    score += occurrences
+        
+        if score > 0:
+            keyword_scores[keyword] = score
+    
+    # 점수가 가장 높은 키워드 선택
+    if keyword_scores:
+        best_keyword = max(keyword_scores.items(), key=lambda x: x[1])[0]
+        print(f"  -> 키워드 할당: '{best_keyword}' (패턴 매칭 기반)")
+        return best_keyword
+    
+    # 매칭되는 패턴이 없는 경우 기본 키워드 반환
+    print(f"  -> 기본 키워드 할당: 'Packaging Industry' (패턴 매칭 실패)")
+    return "Packaging Industry"
+
+# --------------------------------------------------------------------
 # 필수 사이트 기사 처리 함수
 def process_site_articles(driver, articles):
     valid_articles = []
@@ -665,8 +733,8 @@ def process_site_articles(driver, articles):
             
             # 기사 평가 추가 (필수 사이트는 필터링하지 않고 평가 점수만 추가)
             try:
-                # 키워드가 없는 경우 사이트 도메인을 키워드로 사용
-                keyword = article.get('keyword', get_newspaper_name(article["url"]))
+                # 키워드가 없는 경우, 패키징 관련 키워드 자동 할당
+                keyword = article.get('keyword', assign_packaging_keywords(article))
                 
                 # 요약이 너무 긴 경우 앞부분만 사용
                 if len(article_text) > 3000:
@@ -753,10 +821,64 @@ def process_keyword_articles(driver, articles):
     return valid_articles
 
 # --------------------------------------------------------------------
+# 기사를 평가 점수 기준으로 정렬하는 유틸리티 함수
+def sort_articles_by_score(articles, reverse=True):
+    """
+    기사 목록을 평가 점수(evaluation_score) 기준으로 정렬합니다.
+    
+    Parameters:
+    - articles: 기사 목록 (딕셔너리 리스트)
+    - reverse: True이면 내림차순(높은 점수 → 낮은 점수), False이면 오름차순(낮은 점수 → 높은 점수)
+    
+    Returns:
+    - 정렬된 기사 목록
+    """
+    sorted_articles = sorted(articles, key=lambda x: x.get('evaluation_score', 0.0), reverse=reverse)
+    sort_direction = "내림차순" if reverse else "오름차순"
+    print(f"기사 {len(sorted_articles)}개를 평가 점수 기준으로 {sort_direction} 정렬했습니다.")
+    return sorted_articles
+
+# --------------------------------------------------------------------
 # 이메일 발송 및 PDF 생성 함수
 def build_and_send_email(valid_articles):
+    # 기사를 평가 점수 기준으로 내림차순 정렬
+    valid_articles = sort_articles_by_score(valid_articles)
+    
     html_parts = []
     html_parts.append('<div style="font-family: Roboto, Nanum Gothic, sans-serif; color: #333; line-height: 1.6;">')
+    
+    # 목차 추가 - 시작
+    html_parts.append('<div style="margin-bottom: 30px; padding: 15px; background-color: #f5f5f5; border-radius: 8px;">')
+    html_parts.append('<h2 style="margin-top: 0; border-bottom: 1px solid #ddd; padding-bottom: 10px;">기사 목차</h2>')
+    html_parts.append('<ol style="margin: 0; padding-left: 20px;">')
+    
+    # 각 기사의 간략 정보를 목차에 추가
+    for i, art in enumerate(valid_articles):
+        title_display = art["np_title"]
+        translated_title = translate_text(art["np_title"], mode="title") if len(title_display) > 50 else ""
+        short_title = title_display[:50] + "..." if len(title_display) > 50 else title_display
+        
+        # 평가 점수가 있으면 표시
+        score_display = f" - {art.get('evaluation_score', 0.0):.1f}점" if 'evaluation_score' in art else ""
+        
+        # 필수 사이트 여부 표시
+        star_mark = "★ " if art.get("is_must_visit") else ""
+        
+        # 목차 항목 추가
+        html_parts.append(f'<li><a href="#article-{i+1}" style="text-decoration: none; color: #1a73e8;">')
+        html_parts.append(f'{star_mark}{short_title}{score_display}</a>')
+        
+        # 번역된 제목이 있으면 괄호 안에 추가 (선택적)
+        if translated_title:
+            short_translated = translated_title[:30] + "..." if len(translated_title) > 30 else translated_title
+            html_parts.append(f' <small style="color: #666;">({short_translated})</small>')
+            
+        html_parts.append('</li>')
+    
+    html_parts.append('</ol>')
+    html_parts.append('</div>')
+    # 목차 추가 - 끝
+    
     for i, art in enumerate(valid_articles):
         print(f"번역 요청 중: {art['np_title']} ({i+1}/{len(valid_articles)})")
         translated_title = translate_text(art["np_title"], mode="title")
@@ -779,9 +901,10 @@ def build_and_send_email(valid_articles):
         if art.get("is_must_visit"):
             title_display = f"★ {title_display} ★"
             
+        # 기사 ID 추가하여 목차에서 링크 가능하게 함
         article_html = f"""
-        <div style="margin-bottom: 20px;">
-          <h2 style="margin: 0 0 5px 0;">{title_display}</h2>
+        <div id="article-{i+1}" style="margin-bottom: 20px;">
+          <h2 style="margin: 0 0 5px 0;"><span style="color: #1a73e8; font-weight: bold; margin-right: 10px;">{i+1}.</span>{title_display}</h2>
           <h3 style="margin: 0 0 10px 0; color: #555;">{translated_title}</h3>
         """
         
@@ -878,6 +1001,29 @@ def build_and_send_email(valid_articles):
       margin: 0 0 0 20px;
       padding: 0;
     }}
+    .toc {{
+      background-color: #f5f5f5;
+      border-radius: 8px;
+      padding: 15px;
+      margin-bottom: 30px;
+    }}
+    .toc h2 {{
+      border-bottom: 1px solid #ddd;
+      padding-bottom: 10px;
+      margin-top: 0;
+    }}
+    .toc ol {{
+      margin: 0;
+      padding-left: 20px;
+    }}
+    .toc a {{
+      text-decoration: none;
+    }}
+    .article-number {{
+      color: #1a73e8;
+      font-weight: bold;
+      margin-right: 10px;
+    }}
   </style>
 </head>
 <body>
@@ -921,7 +1067,7 @@ def filter_articles_by_evaluation(articles, min_score=None, total_limit=None):
     - total_limit: 반환할 최대 기사 수 (기본값: 환경변수 또는 30)
     
     Returns:
-    - 평가 점수가 min_score 이상인 기사 목록
+    - 평가 점수가 min_score 이상인 기사 목록 (점수 내림차순 정렬)
     """
     # 환경 변수 또는 기본값 사용
     if min_score is None:
@@ -941,7 +1087,7 @@ def filter_articles_by_evaluation(articles, min_score=None, total_limit=None):
     
     # 각 기사에 대해 평가 수행
     for idx, article in enumerate(articles):
-        keyword = article.get('keyword', '기타')
+        keyword = article.get('keyword', assign_packaging_keywords(article))
         title = article.get('np_title', '제목 없음')
         print(f"\n[평가 진행] {idx+1}/{len(articles)} - 키워드: {keyword}, 제목: {title}")
         
@@ -961,6 +1107,9 @@ def filter_articles_by_evaluation(articles, min_score=None, total_limit=None):
             article_summary = article_text[:3000] + "..."
         else:
             article_summary = article_text
+        
+        # 키워드 저장
+        article['keyword'] = keyword
             
         # 기사 평가 실행 (재시도 로직 추가)
         for attempt in range(API_RETRY_COUNT):
@@ -1004,7 +1153,7 @@ def filter_articles_by_evaluation(articles, min_score=None, total_limit=None):
             gc.collect()
     
     # 평가 점수 기준으로 내림차순 정렬
-    evaluated_articles.sort(key=lambda x: x.get('evaluation_score', 0.0), reverse=True)
+    evaluated_articles = sort_articles_by_score(evaluated_articles)
     
     # 총 제한 개수 적용
     if len(evaluated_articles) > total_limit:
@@ -1279,6 +1428,7 @@ def write_to_spreadsheet(articles):
     """
     각 기사에 대해 "성공여부", "신문사", "제목", "링크" 뒤에,
     평탄화된 HTML 태그(최상위 및 모든 자식 태그)를 별도의 셀에 입력합니다.
+    기사는 평가 점수 기준으로 내림차순 정렬됩니다.
     최대 100개의 태그 열을 생성하며, 셀 당 최대 50,000자까지 저장합니다.
     """
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -1288,6 +1438,9 @@ def write_to_spreadsheet(articles):
     client = gspread.authorize(creds)
     spreadsheet_name = "[RPA]news_scrapping_database"
     sheet = client.open(spreadsheet_name).worksheet("List")
+    
+    # 기사를 평가 점수 기준으로 내림차순 정렬
+    articles = sort_articles_by_score(articles)
     
     # 헤더: 기본 4개 열 + 최대 100개의 태그 열
     header = ["성공여부", "신문사", "제목", "링크"]
@@ -1335,6 +1488,7 @@ def write_to_spreadsheet(articles):
 def write_to_csv(articles, filepath=None):
     """
     크롤링된 기사 데이터를 CSV 파일로 저장합니다.
+    기사는 평가 점수 기준으로 내림차순 정렬됩니다.
     
     Parameters:
     - articles: 기사 목록 (딕셔너리 리스트)
@@ -1348,6 +1502,9 @@ def write_to_csv(articles, filepath=None):
     from datetime import datetime
     
     try:
+        # 기사를 평가 점수 기준으로 내림차순 정렬
+        articles = sort_articles_by_score(articles)
+        
         # 파일명이 지정되지 않은 경우 현재 날짜와 시간으로 파일명 생성
         if filepath is None:
             now = datetime.now().strftime("%y%m%d_%H%M%S")

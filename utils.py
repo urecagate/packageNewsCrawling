@@ -1179,12 +1179,22 @@ def build_and_send_email(valid_articles):
       font-weight: bold;
       margin-right: 10px;
     }}
+    footer {{
+      margin-top: 40px;
+      padding-top: 20px;
+      border-top: 1px solid #ddd;
+      font-size: 14px;
+      color: #666;
+      text-align: center;
+    }}
   </style>
 </head>
 <body>
   <h1>{subject}</h1>
-  <p>※ 첨부된 PDF 파일에는 <strong>목차와 내부 링크 기능</strong>이 포함되어 있습니다.</p>
   {email_body_content}
+  <footer>
+    <p>담당 부서: AI기술팀 | 담당자: 최병준 과장(cbj6214@dongwon.com)</p>
+  </footer>
 </body>
 </html>"""
     

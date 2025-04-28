@@ -1,6 +1,7 @@
 name: Build, Push, and Run Docker Container
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main

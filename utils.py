@@ -904,27 +904,41 @@ def build_and_send_email(valid_articles):
     email_html_parts.append('<div style="font-family: Roboto, Nanum Gothic, sans-serif; color: #333; line-height: 1.6;">')
     pdf_html_parts.append('<div style="font-family: Roboto, Nanum Gothic, sans-serif; color: #333; line-height: 1.6;">')
     
-    # PDF용 목차 추가 (이메일에는 제외)
-    pdf_html_parts.append('<div style="margin-bottom: 30px; padding: 15px; background-color: #f5f5f5; border-radius: 8px;">')
-    pdf_html_parts.append('<h2 style="margin-top: 0; border-bottom: 1px solid #ddd; padding-bottom: 10px;">기사 목차</h2>')
-    pdf_html_parts.append('<ol style="margin: 0; padding-left: 20px;">')
-    
     # 번역된 제목을 미리 생성 (중복 번역 방지)
     translated_titles = []
     for art in valid_articles:
         translated_title = translate_text(art["np_title"], mode="title")
         translated_titles.append(translated_title)
     
-    # 각 기사의 간략 정보를 목차에 추가 (PDF에만)
+    # 이메일용 목차 추가 (링크 없는 버전)
+    email_html_parts.append('<div style="margin-bottom: 30px; padding: 15px; background-color: #f5f5f5; border-radius: 8px;">')
+    email_html_parts.append('<h2 style="margin-top: 0; border-bottom: 1px solid #ddd; padding-bottom: 10px;">기사 목차</h2>')
+    email_html_parts.append('<ol style="margin: 0; padding-left: 20px;">')
+    
+    # 각 기사의 간략 정보를 목차에 추가 (이메일용 - 링크 없음)
     for i, (art, translated_title) in enumerate(zip(valid_articles, translated_titles)):
-        # 한글 번역 제목만 표시 (원문 제목 제외)
-        
         # 필수 사이트 여부 표시
         star_mark = "★ " if art.get("is_must_visit") else ""
         
-        # 목차 항목 추가 (번호와 한글 번역 제목만)
+        # 이메일용 목차 항목 추가 (링크 없이, 넘버링을 제거한 한글 번역 제목만)
+        email_html_parts.append(f'<li><span style="color: #1a73e8;">{star_mark}{translated_title}</span></li>')
+    
+    email_html_parts.append('</ol>')
+    email_html_parts.append('</div>')
+    
+    # PDF용 목차 추가 (링크 있는 버전)
+    pdf_html_parts.append('<div style="margin-bottom: 30px; padding: 15px; background-color: #f5f5f5; border-radius: 8px;">')
+    pdf_html_parts.append('<h2 style="margin-top: 0; border-bottom: 1px solid #ddd; padding-bottom: 10px;">기사 목차</h2>')
+    pdf_html_parts.append('<ol style="margin: 0; padding-left: 20px;">')
+    
+    # 각 기사의 간략 정보를 목차에 추가 (PDF용 - 링크 있음)
+    for i, (art, translated_title) in enumerate(zip(valid_articles, translated_titles)):
+        # 필수 사이트 여부 표시
+        star_mark = "★ " if art.get("is_must_visit") else ""
+        
+        # PDF용 목차 항목 추가 (넘버링을 제거한 한글 번역 제목만, 링크 있음)
         pdf_html_parts.append(f'<li><a href="#article-{i+1}" style="text-decoration: none; color: #1a73e8;">')
-        pdf_html_parts.append(f'{star_mark}{i+1}. {translated_title}</a></li>')
+        pdf_html_parts.append(f'{star_mark}{translated_title}</a></li>')
     
     pdf_html_parts.append('</ol>')
     pdf_html_parts.append('</div>')
@@ -1468,8 +1482,36 @@ def scrape_keyword_search_articles(driver):
 
     # --- 2. 각 기사에서 실제 기사 내용 추출 (newspaper3k + Selenium Fallback) ---
     valid_articles = []
-    for art in articles:
-        print(f"\n[기사 추출 시도] URL: {art['url']}")
+    total_articles = len(articles)
+    
+    # 드라이버 재초기화 주기 설정
+    RESET_INTERVAL = 5  # 5개 기사마다 드라이버 재시작
+    
+    # 메모리 사용량 로깅 (시작)
+    log_memory_usage("기사 추출 시작")
+    
+    for idx, art in enumerate(articles):
+        print(f"\n[기사 추출 시도] URL: {art['url']} ({idx+1}/{total_articles})")
+        
+        # 주기적 드라이버 초기화 및 메모리 정리
+        if idx > 0 and idx % RESET_INTERVAL == 0:
+            print(f"--- 드라이버 재초기화 및 메모리 정리 ({idx}/{total_articles}) ---")
+            # 기존 드라이버 종료
+            try:
+                driver.quit()
+            except Exception as e:
+                print(f"드라이버 종료 중 오류: {e}")
+            
+            # 메모리 정리
+            import gc
+            gc.collect()
+            log_memory_usage(f"GC 수행 후 ({idx}/{total_articles})")
+            time.sleep(2)
+            
+            # 새 드라이버 생성
+            driver = create_driver_debug()
+            print("드라이버 재초기화 완료")
+        
         # newspaper3k를 사용하여 기사 내용 추출, 실패 시 Selenium Fallback 적용
         np_title, article_text, publish_date = get_article_text(art["url"], driver)
         if np_title == "제목 없음" or article_text == "본문 없음":
@@ -1499,6 +1541,26 @@ def scrape_keyword_search_articles(driver):
             art["html"] = ""
         
         valid_articles.append(art)
+        
+        # 메모리 모니터링 (10개 기사마다)
+        if idx % 10 == 0 and idx > 0:
+            log_memory_usage(f"기사 {idx}개 처리 후")
+            
+        # 대규모 메모리 청소 (20개 기사마다)
+        if idx % 20 == 0 and idx > 0:
+            print(f"--- 대규모 메모리 정리 수행 ({idx}/{total_articles}) ---")
+            import gc
+            gc.collect()
+            log_memory_usage(f"대규모 GC 수행 후 ({idx}/{total_articles})")
+    
+    # 메모리 사용량 로깅 (종료)
+    log_memory_usage("기사 추출 완료")
+    
+    # 최종 메모리 정리
+    print("--- 최종 메모리 정리 수행 ---")
+    import gc
+    gc.collect()
+    log_memory_usage("최종 GC 수행 후")
     
     # 기사 평가 및 점수 기준 필터링 (환경 변수에서 가져온 값 사용)
     evaluated_articles = filter_articles_by_evaluation(valid_articles)

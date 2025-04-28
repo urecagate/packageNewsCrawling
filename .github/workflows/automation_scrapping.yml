@@ -1,28 +1,6 @@
 name: Package News Scrapping
 
 on:
-  push:
-    branches: [ master ]
-    paths:
-      - Dockerfile
-      - main.py
-      - utils.py
-      - config.py
-      - scrapers/**
-  workflow_dispatch:
-    inputs:
-      article_limit:
-        description: '수집할 최대 기사 수'
-        required: false
-        default: '30'
-      min_score:
-        description: '기사 최소 평가 점수'
-        required: false
-        default: '5.0'
-      per_keyword_limit:
-        description: '키워드당 최대 기사 수'
-        required: false
-        default: '10'
   schedule:
     - cron: '0 23 * * *'  # UTC 23:00 => 한국 시각 08:00
 
@@ -40,9 +18,9 @@ jobs:
       EMAIL_RECIPIENT: ${{ vars.EMAIL_RECIPIENT }}
       CI: 'true'
       # 기사 수집 제한 환경 변수
-      ARTICLE_LIMIT: ${{ vars.ARTICLE_LIMIT || github.event.inputs.article_limit || '30' }}
-      MIN_ARTICLE_SCORE: ${{ vars.MIN_ARTICLE_SCORE || github.event.inputs.min_score || '5.0' }}
-      PER_KEYWORD_LIMIT: ${{ vars.PER_KEYWORD_LIMIT || github.event.inputs.per_keyword_limit || '10' }}
+      ARTICLE_LIMIT: ${{ vars.ARTICLE_LIMIT || '30' }}
+      MIN_ARTICLE_SCORE: ${{ vars.MIN_ARTICLE_SCORE || '5.0' }}
+      PER_KEYWORD_LIMIT: ${{ vars.PER_KEYWORD_LIMIT || '10' }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v3

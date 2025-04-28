@@ -7,12 +7,16 @@ import smtplib
 import platform
 import gspread
 import subprocess
+import urllib.parse  # URL 인코딩을 위한 모듈 추가
 from datetime import datetime as dt
 from datetime import timedelta
 from dateutil.tz import gettz
 from dateutil.parser import parse
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.mime.base import MIMEBase  # 상단으로 이동
+from email.header import Header  # 상단으로 이동
+from email import encoders  # 상단으로 이동
 import requests
 from bs4 import BeautifulSoup
 from selenium import webdriver
@@ -344,30 +348,78 @@ def evaluate_article(keyword, article_summary):
 
 # --------------------------------------------------------------------
 # 이메일 발송 함수 (SMTP)
-def send_email(subject, html_body, recipient, attachment_path=None):
+def send_email(subject, html_body, recipient, attachment_path=None, attachment_filename=None):
+    """
+    이메일을 발송하는 함수 (첨부 파일 지원)
+    
+    Args:
+        subject: 이메일 제목
+        html_body: HTML 형식의 이메일 본문
+        recipient: 수신자 이메일 주소
+        attachment_path: 첨부 파일 경로 (선택사항)
+        attachment_filename: 첨부 파일로 표시될 이름 (선택사항, 지정하지 않으면 원본 파일명 사용)
+    
+    Returns:
+        bool: 발송 성공 여부
+    """
     sender = sender_email
     email_pw = os.getenv("EMAIL_PASSWORD")
     if email_pw is None:
         print("EMAIL_PASSWORD 환경변수가 설정되어 있지 않습니다.")
         return False
+    
     msg = MIMEMultipart()
     msg["From"] = sender
     msg["To"] = recipient
     msg["Subject"] = subject
     msg.attach(MIMEText(html_body, "html"))
+    
     if attachment_path is not None:
-        from email.mime.base import MIMEBase
-        from email import encoders
         try:
-            with open(attachment_path, "rb") as attachment:
+            # 첨부 파일 읽기
+            with open(attachment_path, "rb") as attachment_file:
                 part = MIMEBase("application", "pdf")
-                part.set_payload(attachment.read())
+                part.set_payload(attachment_file.read())
+            
+            # 파일 인코딩
             encoders.encode_base64(part)
-            part.add_header("Content-Disposition", f'attachment; filename="{os.path.basename(attachment_path)}"')
+            
+            # 첨부 파일 이름 설정 (RFC2231 형식 준수)
+            if attachment_filename is None:
+                attachment_filename = os.path.basename(attachment_path)
+            
+            # 파일명에 한글 또는 특수문자가 포함된 경우에 대비
+            try:
+                # UTF-8로 인코딩된 파일명 생성
+                encoded_filename = attachment_filename.encode('utf-8')
+                
+                # Content-Disposition 헤더 설정 (RFC2231 표준)
+                part.add_header(
+                    'Content-Disposition',
+                    'attachment',
+                    filename='utf-8\'\'%s' % urllib.parse.quote(encoded_filename)
+                )
+                
+                # 이전 버전 호환을 위한 추가 헤더
+                part.add_header(
+                    'Content-Disposition',
+                    'attachment',
+                    filename=attachment_filename
+                )
+            except Exception as encode_error:
+                print(f"파일명 인코딩 중 오류: {encode_error}. 기본 방식으로 대체합니다.")
+                part.add_header(
+                    "Content-Disposition", 
+                    f'attachment; filename="{attachment_filename}"'
+                )
+            
             msg.attach(part)
+            print(f"첨부 파일 추가: {attachment_filename}")
+            
         except Exception as e:
             print("첨부 파일 추가 중 오류 발생:", e)
             return False
+    
     try:
         smtp_server = "smtp.gmail.com"
         smtp_port = 587
@@ -844,49 +896,47 @@ def build_and_send_email(valid_articles):
     # 기사를 평가 점수 기준으로 내림차순 정렬
     valid_articles = sort_articles_by_score(valid_articles)
     
-    html_parts = []
-    html_parts.append('<div style="font-family: Roboto, Nanum Gothic, sans-serif; color: #333; line-height: 1.6;">')
+    # 이메일용 HTML과 PDF용 HTML을 별도로 준비
+    email_html_parts = []
+    pdf_html_parts = []
     
-    # 목차 추가 - 시작
-    html_parts.append('<div style="margin-bottom: 30px; padding: 15px; background-color: #f5f5f5; border-radius: 8px;">')
-    html_parts.append('<h2 style="margin-top: 0; border-bottom: 1px solid #ddd; padding-bottom: 10px;">기사 목차</h2>')
-    html_parts.append('<ol style="margin: 0; padding-left: 20px;">')
+    # 공통 스타일 시작
+    email_html_parts.append('<div style="font-family: Roboto, Nanum Gothic, sans-serif; color: #333; line-height: 1.6;">')
+    pdf_html_parts.append('<div style="font-family: Roboto, Nanum Gothic, sans-serif; color: #333; line-height: 1.6;">')
     
-    # 각 기사의 간략 정보를 목차에 추가
-    for i, art in enumerate(valid_articles):
-        title_display = art["np_title"]
-        translated_title = translate_text(art["np_title"], mode="title") if len(title_display) > 50 else ""
-        short_title = title_display[:50] + "..." if len(title_display) > 50 else title_display
-        
-        # 평가 점수가 있으면 표시
-        score_display = f" - {art.get('evaluation_score', 0.0):.1f}점" if 'evaluation_score' in art else ""
+    # PDF용 목차 추가 (이메일에는 제외)
+    pdf_html_parts.append('<div style="margin-bottom: 30px; padding: 15px; background-color: #f5f5f5; border-radius: 8px;">')
+    pdf_html_parts.append('<h2 style="margin-top: 0; border-bottom: 1px solid #ddd; padding-bottom: 10px;">기사 목차</h2>')
+    pdf_html_parts.append('<ol style="margin: 0; padding-left: 20px;">')
+    
+    # 번역된 제목을 미리 생성 (중복 번역 방지)
+    translated_titles = []
+    for art in valid_articles:
+        translated_title = translate_text(art["np_title"], mode="title")
+        translated_titles.append(translated_title)
+    
+    # 각 기사의 간략 정보를 목차에 추가 (PDF에만)
+    for i, (art, translated_title) in enumerate(zip(valid_articles, translated_titles)):
+        # 한글 번역 제목만 표시 (원문 제목 제외)
         
         # 필수 사이트 여부 표시
         star_mark = "★ " if art.get("is_must_visit") else ""
         
-        # 목차 항목 추가
-        html_parts.append(f'<li><a href="#article-{i+1}" style="text-decoration: none; color: #1a73e8;">')
-        html_parts.append(f'{star_mark}{short_title}{score_display}</a>')
-        
-        # 번역된 제목이 있으면 괄호 안에 추가 (선택적)
-        if translated_title:
-            short_translated = translated_title[:30] + "..." if len(translated_title) > 30 else translated_title
-            html_parts.append(f' <small style="color: #666;">({short_translated})</small>')
-            
-        html_parts.append('</li>')
+        # 목차 항목 추가 (번호와 한글 번역 제목만)
+        pdf_html_parts.append(f'<li><a href="#article-{i+1}" style="text-decoration: none; color: #1a73e8;">')
+        pdf_html_parts.append(f'{star_mark}{i+1}. {translated_title}</a></li>')
     
-    html_parts.append('</ol>')
-    html_parts.append('</div>')
-    # 목차 추가 - 끝
+    pdf_html_parts.append('</ol>')
+    pdf_html_parts.append('</div>')
     
-    for i, art in enumerate(valid_articles):
-        print(f"번역 요청 중: {art['np_title']} ({i+1}/{len(valid_articles)})")
-        translated_title = translate_text(art["np_title"], mode="title")
+    # 각 기사 내용 추가 (이메일과 PDF 모두)
+    for i, (art, translated_title) in enumerate(zip(valid_articles, translated_titles)):
+        print(f"기사 처리 중: {art['np_title']} ({i+1}/{len(valid_articles)})")
         summary = translate_text(art["article_text"], mode="content")
         newspaper_name = get_newspaper_name(art["url"])
         title_display = art["np_title"]
         
-        # 평가 점수와 설명이 있는 경우 추가
+        # 평가 점수와 설명
         evaluation_score = art.get('evaluation_score', None)
         evaluation_explanation = art.get('evaluation_explanation', None)
         
@@ -900,21 +950,31 @@ def build_and_send_email(valid_articles):
         
         if art.get("is_must_visit"):
             title_display = f"★ {title_display} ★"
-            
-        # 기사 ID 추가하여 목차에서 링크 가능하게 함
-        article_html = f"""
+        
+        # PDF용 템플릿 (ID와 앵커 링크 포함)
+        pdf_article_html = f"""
         <div id="article-{i+1}" style="margin-bottom: 20px;">
+          <h2 style="margin: 0 0 5px 0;"><span style="color: #1a73e8; font-weight: bold; margin-right: 10px;">{i+1}.</span>{title_display}</h2>
+          <h3 style="margin: 0 0 10px 0; color: #555;">{translated_title}</h3>
+        """
+        
+        # 이메일용 템플릿 (ID와 앵커 링크 제외)
+        email_article_html = f"""
+        <div style="margin-bottom: 20px;">
           <h2 style="margin: 0 0 5px 0;"><span style="color: #1a73e8; font-weight: bold; margin-right: 10px;">{i+1}.</span>{title_display}</h2>
           <h3 style="margin: 0 0 10px 0; color: #555;">{translated_title}</h3>
         """
         
         # 평가 점수가 있는 경우 추가 (타이틀 아래로 이동)
         if evaluation_score is not None:
-            article_html += f"""
+            score_html = f"""
           <p style="margin: 3px 0;"><strong>GPT 연관성 평가 점수:</strong> {evaluation_score:.1f}점</p>
             """
-            
-        article_html += f"""
+            pdf_article_html += score_html
+            email_article_html += score_html
+        
+        # 공통 정보 추가 (PDF와 이메일 모두)
+        common_html = f"""
           <p style="margin: 3px 0;"><strong>업로드 시간:</strong> {art.get('date', '정보 없음')}</p>
           <p style="margin: 3px 0;"><strong>원문 URL:</strong> <a href="{art['url']}" style="color: #1a73e8; text-decoration: none;">{newspaper_name}</a></p>
           {source_info}
@@ -923,46 +983,74 @@ def build_and_send_email(valid_articles):
           <p style="margin: 3px 0;"><strong>요약:</strong></p>
           <ul style="margin: 0 0 0 20px; padding: 0;">
         """
+        pdf_article_html += common_html
+        email_article_html += common_html
+        
+        # 요약 내용 추가
         summary_lines = [line.strip().lstrip('-') for line in summary.splitlines() if line.strip()]
         if summary_lines:
             li_items = "".join(f"<li>{l}</li>" for l in summary_lines)
         else:
             li_items = "<li>요약 내용 없음</li>"
-        article_html += li_items
-        article_html += """
+        
+        pdf_article_html += li_items
+        email_article_html += li_items
+        
+        closing_html = """
           </ul>
         </div>
         """
+        pdf_article_html += closing_html
+        email_article_html += closing_html
         
         # 평가 설명이 있는 경우 추가 (요약 다음으로 이동)
         if evaluation_explanation:
-            article_html += f"""
+            eval_html = f"""
         <div style="margin-bottom: 20px;">
           <p style="margin: 3px 0;"><strong>평가 내용:</strong></p>
           <ul style="margin: 0 0 0 20px; padding: 0;">
-        """
+            """
+            
             evaluation_lines = [line.strip() for line in evaluation_explanation.splitlines() if line.strip()]
             if evaluation_lines:
                 eval_items = "".join(f"<li>{l}</li>" for l in evaluation_lines)
-                article_html += eval_items
+                eval_html += eval_items
             else:
-                article_html += f"<li>{evaluation_explanation}</li>"
+                eval_html += f"<li>{evaluation_explanation}</li>"
             
-            article_html += """
+            eval_html += """
           </ul>
         </div>
             """
+            
+            pdf_article_html += eval_html
+            email_article_html += eval_html
         
-        article_html += """
+        # 구분선 추가
+        separator = """
         <hr style="border: none; border-top: 2px dashed #888; margin: 30px 0;">
         """
-        html_parts.append(article_html)
-    html_parts.append("</div>")
-    html_body_content = "".join(html_parts)
+        pdf_article_html += separator
+        email_article_html += separator
+        
+        # 각각의 HTML 파트에 추가
+        pdf_html_parts.append(pdf_article_html)
+        email_html_parts.append(email_article_html)
     
+    # HTML 마무리
+    pdf_html_parts.append("</div>")
+    email_html_parts.append("</div>")
+    
+    # 최종 HTML 내용 생성
+    pdf_body_content = "".join(pdf_html_parts)
+    email_body_content = "".join(email_html_parts)
+    
+    # 날짜 및 제목 설정
     date_str = dt.now(gettz("Asia/Seoul")).strftime("%y/%m/%d")
     subject = f"[{date_str}] Packaging 뉴스 기사 번역 및 요약 ({len(valid_articles)}개)"
-    html_template = f"""<!DOCTYPE html>
+    
+    # PDF용 HTML 템플릿
+    pdf_template = f"""<!DOCTYPE html>
 <html>
 <head>
   <meta charset="UTF-8">
@@ -1028,22 +1116,81 @@ def build_and_send_email(valid_articles):
 </head>
 <body>
   <h1>{subject}</h1>
-  {html_body_content}
+  {pdf_body_content}
+</body>
+</html>"""
+
+    # 이메일용 HTML 템플릿 (목차 없음)
+    email_template = f"""<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>{subject}</title>
+  <style>
+    body {{
+      font-family: Roboto, Nanum Gothic, sans-serif;
+      color: #333;
+      line-height: 1.6;
+      margin: 20px;
+    }}
+    h1 {{
+      text-align: left;
+      margin-top: 20px;
+    }}
+    h2 {{
+      margin: 0 0 5px 0;
+    }}
+    h3 {{
+      margin: 0 0 10px 0;
+      color: #555;
+    }}
+    p {{
+      margin: 3px 0;
+    }}
+    a {{
+      color: #1a73e8;
+      text-decoration: none;
+    }}
+    hr {{
+      border: none;
+      border-top: 2px dashed #888;
+      margin: 30px 0;
+    }}
+    ul {{
+      margin: 0 0 0 20px;
+      padding: 0;
+    }}
+    .article-number {{
+      color: #1a73e8;
+      font-weight: bold;
+      margin-right: 10px;
+    }}
+  </style>
+</head>
+<body>
+  <h1>{subject}</h1>
+  <p>※ 첨부된 PDF 파일에는 <strong>목차와 내부 링크 기능</strong>이 포함되어 있습니다.</p>
+  {email_body_content}
 </body>
 </html>"""
     
+    # PDF 파일 생성
     safe_date_str = dt.now(gettz("Asia/Seoul")).strftime("%y_%m_%d")
     pdf_filename = f"[{safe_date_str}] Packaging 뉴스 기사 번역 및 요약 ({len(valid_articles)}개).pdf"
     try:
-        HTML(string=html_template).write_pdf(pdf_filename)
+        HTML(string=pdf_template).write_pdf(pdf_filename)
         print("PDF 파일 생성 완료 (WeasyPrint 사용).")
     except Exception as e:
         print("PDF 생성 중 오류 발생:", e)
         pdf_filename = None
     
+    # 이메일 발송
     recipient = os.environ.get("EMAIL_RECIPIENT", "cbj6214@dongwon.com")
     
-    email_success = send_email(subject, html_template, recipient, attachment_path=pdf_filename)
+    # 발송용 PDF 파일명 지정
+    attachment_filename = f"PackagingNewsDigest_{safe_date_str}.pdf"
+    
+    email_success = send_email(subject, email_template, recipient, attachment_path=pdf_filename, attachment_filename=attachment_filename)
     if email_success:
         print(f"이메일 발송 성공: 총 {len(valid_articles)}개 기사 발송됨.")
     else:

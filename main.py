@@ -6,7 +6,7 @@ from config import (
 )
 from utils import (
     kill_chrome, start_chrome_debug, create_driver_debug, close_popups, 
-    get_article_date_from_meta, translate_text, send_email, get_article_text_with_selenium, 
+    get_article_date_from_meta, translate_text, send_email_ews, get_article_text_with_selenium, 
     get_article_text, get_articles_from_google_news, get_newspaper_name, os, HTML,
     process_site_articles, scrape_keyword_search_articles, process_keyword_articles, build_and_send_email,
     write_to_spreadsheet, write_to_csv

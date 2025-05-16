@@ -112,7 +112,6 @@ def search_api_news_articles(driver):
                     "start": start_index,
                     "num": results_per_page,
                     "sort": "date:r:20230101:20301231",  # 날짜순 정렬 (최신순)
-                    "searchType": "news"  # 뉴스 검색 결과만 반환
                 }
                 
                 response = requests.get(search_url, params=params)

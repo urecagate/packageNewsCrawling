@@ -3,7 +3,6 @@ import os
 import re
 import json
 import time
-import smtplib
 import platform
 import gspread
 import subprocess
@@ -16,7 +15,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase  # 상단으로 이동
 from email.header import Header  # 상단으로 이동
-from email import encoders  # 상단으로 이동
+from email.encoders import encode_base64  # 인코더 직접 import로 변경
 import requests
 from bs4 import BeautifulSoup
 from selenium import webdriver
@@ -347,91 +346,103 @@ def evaluate_article(keyword, article_summary):
 
 
 # --------------------------------------------------------------------
-# 이메일 발송 함수 (SMTP)
-def send_email(subject, html_body, recipient, attachment_path=None, attachment_filename=None):
+# Exchange Web Services 이메일 발송 함수
+def send_email_ews(subject, html_body, recipients, attachment_path=None, attachment_filename=None):
     """
-    이메일을 발송하는 함수 (첨부 파일 지원)
+    Exchange Web Services(EWS)를 사용하여 이메일을 발송하는 함수
     
     Args:
         subject: 이메일 제목
         html_body: HTML 형식의 이메일 본문
-        recipient: 수신자 이메일 주소
+        recipients: 수신자 이메일 주소 (문자열 또는 리스트)
         attachment_path: 첨부 파일 경로 (선택사항)
-        attachment_filename: 첨부 파일로 표시될 이름 (선택사항, 지정하지 않으면 원본 파일명 사용)
+        attachment_filename: 첨부 파일로 표시될 이름 (선택사항)
     
     Returns:
         bool: 발송 성공 여부
     """
-    sender = sender_email
-    email_pw = os.getenv("EMAIL_PASSWORD")
-    if email_pw is None:
-        print("EMAIL_PASSWORD 환경변수가 설정되어 있지 않습니다.")
-        return False
-    
-    msg = MIMEMultipart()
-    msg["From"] = sender
-    msg["To"] = recipient
-    msg["Subject"] = subject
-    msg.attach(MIMEText(html_body, "html"))
-    
-    if attachment_path is not None:
-        try:
-            # 첨부 파일 읽기
-            with open(attachment_path, "rb") as attachment_file:
-                part = MIMEBase("application", "pdf")
-                part.set_payload(attachment_file.read())
-            
-            # 파일 인코딩
-            encoders.encode_base64(part)
-            
-            # 첨부 파일 이름 설정 (RFC2231 형식 준수)
+    try:
+        from exchangelib import Credentials, Account, Message, HTMLBody, Configuration, FileAttachment, DELEGATE
+        
+        # 환경 변수에서 Exchange 계정 정보 가져오기
+        exchange_email = os.environ.get("EXCHANGE_EMAIL")
+        exchange_password = os.environ.get("EXCHANGE_PASSWORD")
+        exchange_server = os.environ.get("EXCHANGE_SERVER")
+        
+        if not all([exchange_email, exchange_password, exchange_server]):
+            print("Exchange 계정 정보가 환경 변수에 설정되어 있지 않습니다.")
+            return False
+        
+        # 수신자 처리 (문자열 또는 리스트)
+        if isinstance(recipients, str):
+            # 쉼표나 세미콜론으로 구분된 문자열인 경우 리스트로 변환
+            if "," in recipients or ";" in recipients:
+                # 먼저 쉼표로 분리
+                comma_split = recipients.split(",")
+                result = []
+                # 각 항목에 대해 세미콜론으로 추가 분리
+                for item in comma_split:
+                    result.extend(item.split(";"))
+                # 공백 제거 및 빈 항목 필터링
+                recipients = [email.strip() for email in result if email.strip()]
+            else:
+                recipients = [recipients]
+        
+        # 인증 정보 설정
+        credentials = Credentials(
+            username=exchange_email,
+            password=exchange_password
+        )
+        
+        # 서버 설정
+        config = Configuration(
+            server=exchange_server,
+            credentials=credentials
+        )
+        
+        # 계정 연결
+        account = Account(
+            primary_smtp_address=exchange_email,
+            config=config,
+            autodiscover=False,
+            access_type=DELEGATE
+        )
+        
+        # 메시지 작성
+        message = Message(
+            account=account,
+            subject=subject,
+            body=HTMLBody(html_body),
+            to_recipients=recipients
+        )
+        
+        # 첨부 파일 추가
+        if attachment_path and os.path.exists(attachment_path):
+            with open(attachment_path, 'rb') as f:
+                content = f.read()
+                
             if attachment_filename is None:
                 attachment_filename = os.path.basename(attachment_path)
-            
-            # 파일명에 한글 또는 특수문자가 포함된 경우에 대비
-            try:
-                # UTF-8로 인코딩된 파일명 생성
-                encoded_filename = attachment_filename.encode('utf-8')
                 
-                # Content-Disposition 헤더 설정 (RFC2231 표준)
-                part.add_header(
-                    'Content-Disposition',
-                    'attachment',
-                    filename='utf-8\'\'%s' % urllib.parse.quote(encoded_filename)
-                )
-                
-                # 이전 버전 호환을 위한 추가 헤더
-                part.add_header(
-                    'Content-Disposition',
-                    'attachment',
-                    filename=attachment_filename
-                )
-            except Exception as encode_error:
-                print(f"파일명 인코딩 중 오류: {encode_error}. 기본 방식으로 대체합니다.")
-                part.add_header(
-                    "Content-Disposition", 
-                    f'attachment; filename="{attachment_filename}"'
-                )
-            
-            msg.attach(part)
-            print(f"첨부 파일 추가: {attachment_filename}")
-            
-        except Exception as e:
-            print("첨부 파일 추가 중 오류 발생:", e)
-            return False
-    
-    try:
-        smtp_server = "smtp.gmail.com"
-        smtp_port = 587
-        server = smtplib.SMTP(smtp_server, smtp_port)
-        server.starttls()
-        server.login(sender, email_pw)
-        server.sendmail(sender, recipient, msg.as_string())
-        server.quit()
-        print("이메일 발송 성공!")
+            file_attachment = FileAttachment(name=attachment_filename, content=content)
+            message.attach(file_attachment)
+            print(f"EWS: 첨부 파일 추가: {attachment_filename}")
+        
+        # 전송
+        message.send()
+        recipient_count = len(recipients)
+        recipients_display = ", ".join(recipients[:3])
+        if recipient_count > 3:
+            recipients_display += f" 외 {recipient_count - 3}명"
+        
+        print(f"EWS: 이메일 발송 성공! (수신자: {recipients_display})")
         return True
+        
+    except ImportError:
+        print("exchangelib 라이브러리가 설치되어 있지 않습니다. pip install exchangelib 명령으로 설치하세요.")
+        return False
     except Exception as e:
-        print("이메일 발송 중 오류 발생:", e)
+        print(f"EWS 이메일 발송 중 오류 발생: {e}")
         return False
 
 # --------------------------------------------------------------------
@@ -1208,24 +1219,27 @@ def build_and_send_email(valid_articles):
         print("PDF 생성 중 오류 발생:", e)
         pdf_filename = None
     
-    # 이메일 발송
-    recipient = os.environ.get("EMAIL_RECIPIENT", "cbj6214@dongwon.com")
+    # 다수의 수신자 처리 (쉼표로 구분된 이메일 목록 지원)
+    recipients = os.environ.get("EMAIL_RECIPIENTS", "cbj6214@dongwon.com")
     
     # 발송용 PDF 파일명 지정
     attachment_filename = f"PackagingNewsDigest_{safe_date_str}.pdf"
     
-    email_success = send_email(subject, email_template, recipient, attachment_path=pdf_filename, attachment_filename=attachment_filename)
+    # EWS 방식으로 이메일 발송
+    email_success = send_email_ews(subject, email_template, recipients, 
+                                  attachment_path=pdf_filename, 
+                                  attachment_filename=attachment_filename)
+    
     if email_success:
-        print(f"이메일 발송 성공: 총 {len(valid_articles)}개 기사 발송됨.")
+        print(f"EWS 이메일 발송 성공: 총 {len(valid_articles)}개 기사 발송됨.")
     else:
-        print("이메일 발송 실패.")
+        print(f"EWS 이메일 발송 실패.")
     
     if email_success and pdf_filename and os.path.exists(pdf_filename):
         os.remove(pdf_filename)
         print("PDF 파일 삭제 완료.")
     else:
         print("이메일 발송 오류로 PDF 파일을 삭제하지 않음.")
-
 
 # 평가 점수에 따른 기사 필터링 함수 추가
 def filter_articles_by_evaluation(articles, min_score=None, total_limit=None):

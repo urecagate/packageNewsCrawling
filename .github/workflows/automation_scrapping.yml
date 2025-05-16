@@ -17,7 +17,13 @@ jobs:
     env:
       EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
       EMAIL_RECIPIENT: ${{ vars.EMAIL_RECIPIENT }}
+      EXCHANGE_EMAIL: ${{ secrets.EXCHANGE_EMAIL }}
+      EXCHANGE_PASSWORD: ${{ secrets.EXCHANGE_PASSWORD }}
+      EXCHANGE_SERVER: ${{ secrets.EXCHANGE_SERVER }}
       CI: 'true'
+      # Google API 시크릿 추가
+      GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+      GOOGLE_SEARCH_ENGINE_ID: ${{ secrets.GOOGLE_SEARCH_ENGINE_ID }}
       # 기사 수집 제한 환경 변수
       ARTICLE_LIMIT: ${{ vars.ARTICLE_LIMIT || '30' }}
       MIN_ARTICLE_SCORE: ${{ vars.MIN_ARTICLE_SCORE || '5.0' }}

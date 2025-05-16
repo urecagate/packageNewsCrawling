@@ -28,6 +28,11 @@ from urllib.parse import urlparse, urljoin
 from newspaper import Article
 from weasyprint import HTML
 
+# 사용자 정의 예외 클래스 추가
+class SeleniumSearchError(Exception):
+    """셀레늄 검색 중 발생한 오류를 나타내는 사용자 정의 예외"""
+    pass
+
 # Import configuration variables from config.py
 from config import (
     azure_endpoint, azure_subscription_key, azure_application, 
@@ -1420,8 +1425,10 @@ def scrape_keyword_search_articles(driver):
         try:
             driver.get(GOOGLE_NEWS_URL.format(query=keyword))
         except Exception as e:
-            print("  -> 키워드 검색 페이지 접근 실패:", e)
-            continue
+            error_msg = f"키워드 검색 페이지 접근 실패: {e}"
+            print(f"  -> {error_msg}")
+            # 에러를 상위로 전달하기 위해 SeleniumSearchError 예외를 발생시킵니다
+            raise SeleniumSearchError(error_msg) from e
         
         current_page = 1
         while True:

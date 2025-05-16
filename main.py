@@ -9,7 +9,7 @@ from utils import (
     get_article_date_from_meta, translate_text, send_email_ews, get_article_text_with_selenium, 
     get_article_text, get_articles_from_google_news, get_newspaper_name, os, HTML,
     process_site_articles, scrape_keyword_search_articles, process_keyword_articles, build_and_send_email,
-    write_to_spreadsheet, write_to_csv
+    write_to_spreadsheet, write_to_csv, SeleniumSearchError
 )
 from scrapers import (
     scrape_site1, scrape_site2, scrape_site3, scrape_site4, 
@@ -23,6 +23,35 @@ from bs4 import BeautifulSoup
 from dateutil.parser import parse
 from datetime import datetime as dt
 from dateutil.tz import gettz
+
+def try_api_search(driver):
+    """
+    구글 API를 사용한 검색을 시도합니다.
+    
+    Args:
+        driver: Selenium 웹드라이버 객체
+        
+    Returns:
+        list: 검색된 기사 목록 (검색 실패 시 빈 목록)
+    """
+    # 환경 변수 확인 (API 키와 검색 엔진 ID)
+    api_key = os.environ.get("GOOGLE_API_KEY")
+    search_engine_id = os.environ.get("GOOGLE_SEARCH_ENGINE_ID")
+    
+    if not api_key or not search_engine_id:
+        print("[오류] API 키 또는 검색 엔진 ID가 설정되어 있지 않아 API 검색을 진행할 수 없습니다.")
+        print("환경 변수 설정 방법:")
+        print('export GOOGLE_API_KEY="YOUR_API_KEY"')
+        print('export GOOGLE_SEARCH_ENGINE_ID="YOUR_SEARCH_ENGINE_ID"')
+        return []
+    
+    try:
+        articles = search_api_news_articles(driver)
+        print(f"API 키워드 검색 기사 처리 완료: {len(articles)}개")
+        return articles
+    except Exception as api_e:
+        print(f"API 검색도 실패했습니다: {api_e}")
+        return []
 
 def main():
     # 환경 변수로 CI 환경 여부 확인
@@ -64,37 +93,14 @@ def main():
             print("셀레늄을 사용하여 키워드 검색 시작...")
             processed_keyword_articles = scrape_keyword_search_articles(driver)
             print(f"셀레늄 키워드 검색 기사 처리 완료: {len(processed_keyword_articles)}개")
+        except SeleniumSearchError as selenium_error:
+            print(f"셀레늄 검색 실패 감지됨: {selenium_error}")
+            # 셀레늄 검색 중 키워드 페이지 접근 실패 발생 시 즉시 API 검색으로 전환
+            print("Google API로 대체 검색 시도...")
+            processed_keyword_articles = try_api_search(driver)
         except Exception as e:
             error_msg = str(e)
-            print(f"셀레늄 검색 오류 발생: {error_msg}")
-            
-            # 차단 관련 오류 메시지인지 확인
-            is_blocked = any(keyword in error_msg.lower() for keyword in 
-                             ["connection refused", "max retries exceeded", 
-                              "blocked", "captcha", "denied", "forbidden", "503", "429"])
-            
-            if is_blocked:
-                print("구글 검색 차단 감지됨. Google API로 대체 검색 시도...")
-                
-                # 환경 변수 확인 (API 키와 검색 엔진 ID)
-                api_key = os.environ.get("GOOGLE_API_KEY")
-                search_engine_id = os.environ.get("GOOGLE_SEARCH_ENGINE_ID")
-                
-                if not api_key or not search_engine_id:
-                    print("[오류] API 키 또는 검색 엔진 ID가 설정되어 있지 않아 API 검색을 진행할 수 없습니다.")
-                    print("환경 변수 설정 방법:")
-                    print('export GOOGLE_API_KEY="YOUR_API_KEY"')
-                    print('export GOOGLE_SEARCH_ENGINE_ID="YOUR_SEARCH_ENGINE_ID"')
-                else:
-                    try:
-                        processed_keyword_articles = search_api_news_articles(driver)
-                        print(f"API 키워드 검색 기사 처리 완료: {len(processed_keyword_articles)}개")
-                    except Exception as api_e:
-                        print(f"API 검색도 실패했습니다: {api_e}")
-                        processed_keyword_articles = []
-            else:
-                print("일반 오류로 판단되어 API 검색을 시도하지 않습니다.")
-                processed_keyword_articles = []
+            print(f"구글 조회 실패: {error_msg}")
         
         # 두 리스트를 합치기
         combined_articles = processed_site_articles + processed_keyword_articles

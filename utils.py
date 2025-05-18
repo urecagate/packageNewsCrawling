@@ -1225,7 +1225,7 @@ def build_and_send_email(valid_articles):
         pdf_filename = None
     
     # 다수의 수신자 처리 (쉼표로 구분된 이메일 목록 지원)
-    recipients = os.environ.get("EMAIL_RECIPIENTS", "cbj6214@dongwon.com")
+    recipients = os.environ.get("EMAIL_RECIPIENT", "cbj6214@dongwon.com")
     
     # 발송용 PDF 파일명 지정
     attachment_filename = f"PackagingNewsDigest_{safe_date_str}.pdf"
